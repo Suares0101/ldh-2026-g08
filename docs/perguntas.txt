@@ -1,0 +1,28 @@
+objetivo:   clicar no botão 1 e toca a musica guardada 
+            clicar no botao 2 buzzer controlados pelo terminal
+            clicar no botao 3 guarda musicas enviadas do pc para o ATmega328P
+
+
+requesitos: tocar a musia enviada do pc, alimentaçao por usb, ATmega328P, 
+
+
+interface:
+
+
+restrições:
+
+
+orçamento:
+
+
+ligaçao:
+
+
+funcionamento:  como serão usados os botões?
+                
+
+tamanho:
+
+
+prazo:
+
