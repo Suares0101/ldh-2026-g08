@@ -1,0 +1,3 @@
+Quantas notas pode ter cada música? O PDF só diz que a EEPROM tem 1 KB.
+Em que modo arranca a placa depois de ligada?
+Os buzzers são ativos ou passivos?
