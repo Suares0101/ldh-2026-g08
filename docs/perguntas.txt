@@ -13,7 +13,7 @@ requesitos: RF1: P1/P2 tocam o preset 1/2 da EEPROM.
             RNF1: alimentação só por USB (5 V), consumo ≤ 150 mA (proposta).
             RNF2: UART 8N1 a 9600 bit/s.
             RNF3: até 3 notas em simultâneo (uma por buzzer).
-            RNF4: firmware em C.
+            RNF4: firmware em C (avr-gcc), sem avisos com -Wall.
 
 interface:  Botões P1, P2 e M (proposta).
             LED(s) de estado.
@@ -26,7 +26,7 @@ restrições:MCU imposto: ATmega328P (3 timers = 3 canais; EEPROM de 1 KB).
         Firmware em C com avr-gcc.
         Tudo em Git, partilhado com os 2 docentes.
 
-orçamento:  Ainda a defenir
+orçamento:  Ainda a definir
 
 ligaçao:PC ↔ USB ↔ ponte USB-UART ↔ USART0.
         USB também alimenta a placa (5 V VBUS).
