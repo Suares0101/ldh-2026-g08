@@ -1,28 +1,48 @@
-objetivo:   clicar no botão 1 e toca a musica guardada 
-            clicar no botao 2 buzzer controlados pelo terminal
-            clicar no botao 3 guarda musicas enviadas do pc para o ATmega328P
+objetivo:   Placa com ATmega328P que toca música em 3 buzzers piezoelétricos.
+            Modo Presets: o botão toca uma música da EEPROM nos 3 buzzers.
+            Modo Live: o PC envia nota e duração pela UART e toca em tempo real.
+            Modo Reconfiguração: o PC envia uma trama tipo MIDI, que é validada e gravada na EEPROM.
 
 
-requesitos: tocar a musia enviada do pc, alimentaçao por usb, ATmega328P, baud rate 9600
+requesitos: RF1: P1/P2 tocam o preset 1/2 da EEPROM.
+            RF2: os presets mantêm-se após 10 ciclos de power off/on.
+            RF3: modo Live toca a nota recebida pela UART.
+            RF4: valida a trama (checksum) e grava na EEPROM.
+            RF5: trama inválida → NACK e presets inalterados.
+            RF6: botão M muda de modo e um LED indica o modo ativo.
+            RNF1: alimentação só por USB (5 V), consumo ≤ 150 mA (proposta).
+            RNF2: UART 8N1 a 9600 bit/s.
+            RNF3: até 3 notas em simultâneo (uma por buzzer).
+            RNF4: firmware em C.
 
+interface:  Botões P1, P2 e M (proposta).
+            LED(s) de estado.
+            USB com ponte USB-UART (por ex. CH340) para terminal/pyserial.
+            3 buzzers, cada um numa saída de timer (PWM/CTC).
+            Conector ISP para programação.
 
-interface:
+restrições:MCU imposto: ATmega328P (3 timers = 3 canais; EEPROM de 1 KB).
+        Esquemático e PCB em Altium 365, PCB de 2 camadas.
+        Firmware em C com avr-gcc.
+        Tudo em Git, partilhado com os 2 docentes.
 
+orçamento:  Ainda a defenir
 
-restrições:
+ligaçao:PC ↔ USB ↔ ponte USB-UART ↔ USART0.
+        USB também alimenta a placa (5 V VBUS).
+        Timer → driver → buzzer (×3).
+        Botões e LEDs em GPIO.
 
-
-orçamento:
-
-
-ligaçao:
-
-
-funcionamento:  como serão usados os botões?
+funcionamento:M:Presets → Live → Reconfiguração, com o LED a mostrar o modo.
+                P1/P2 (modo Presets): tocam o preset 1 ou 2.
+                Modo Live: comandado pelo terminal.
+                Modo Reconfiguração: o PC envia a trama e a placa responde ACK ou NACK.
+                Por decidir: como parar a reprodução (UC3 da A02).
                 
+tamanho:PCB de 2 camadas, ≤ 80 × 60 mm (proposta)
 
-tamanho:
-
-
-prazo:
+prazo:  E1: 26/10/2026, até às 23h59 (tag E1 no Git).
+        E2: 05/11/2026.
+        E3: 14/12/2026.
+        
 
