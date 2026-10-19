@@ -3,7 +3,7 @@ objetivo:   clicar no botão 1 e toca a musica guardada
             clicar no botao 3 guarda musicas enviadas do pc para o ATmega328P
 
 
-requesitos: tocar a musia enviada do pc, alimentaçao por usb, ATmega328P, 
+requesitos: tocar a musia enviada do pc, alimentaçao por usb, ATmega328P, baud rate 9600
 
 
 interface:
