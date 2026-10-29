@@ -1,7 +1,7 @@
 # Problem Statement
 
 **Projeto:** Sistema musical com 3 buzzers (ATmega328P)
-**Grupo:** [nomes e números]
+**Grupo:** 8 (Luís Miranda e Rodrigo) [números]
 **Data:** [data]
 
 ## 1. Contexto
@@ -23,14 +23,14 @@
 ## 4. Objetivo
 
 - Desenvolver um sistema com ATmega328P que toca música em 3 buzzers e funciona em 3 modos:
-  - **Preset:** um botão seleciona e toca uma música guardada na EEPROM.
+  - **Preset:** os botões B1 e B2 tocam as músicas 1 e 2 guardadas na EEPROM.
   - **Live:** o PC envia por UART a nota e a duração, que tocam em tempo real.
   - **Reconfiguração:** o PC envia uma trama tipo MIDI que o sistema valida e grava na EEPROM, ficando disponível como novo preset.
 
 ## 5. Âmbito
 
 **Inclui:**
-- Hardware com ATmega328P, 3 buzzers e 3 botões (um por modo), alimentado por USB.
+- Hardware com ATmega328P, 3 buzzers, 3 botões (B3 muda de modo; B1 e B2 tocam as músicas 1 e 2 no modo preset) e 3 LEDs (um por modo), alimentado por USB.
 - Comunicação UART com o PC a 9600 baud.
 - Armazenamento de músicas na EEPROM e validação das tramas recebidas.
 - Simulação do circuito (Tinkercad) e montagem física em laboratório.
@@ -46,8 +46,8 @@
 ## 6. Sucesso
 
 - Os 3 buzzers tocam em simultâneo, cada um com a sua voz.
-- No modo preset, o botão seleciona e toca a música guardada, e esta persiste depois de desligar.
+- No modo preset, B1 e B2 tocam as músicas guardadas, e estas persistem depois de desligar.
 - No modo live, as notas enviadas por UART tocam em tempo real com a duração pedida.
-- No modo de reconfiguração, uma trama válida é gravada na EEPROM e uma inválida é rejeitada sem corromper as músicas já guardadas.
+- No modo de reconfiguração, uma trama válida é gravada na EEPROM (2 posições) e uma inválida é rejeitada sem corromper as músicas já guardadas.
 - O sistema funciona só com alimentação USB.
 - [critério de custo/prazo, a confirmar com o cliente]

@@ -1,0 +1,476 @@
+diff --git a/.gitinore b/.gitignore
+similarity index 100%
+rename from .gitinore
+rename to .gitignore
+diff --git a/README.md b/README.md
+index 75ba9ca..7fa5100 100644
+--- a/README.md
++++ b/README.md
+@@ -19,6 +19,7 @@ através de uma trama do tipo MIDI.
+ - [Limites atuais](#limites-atuais)
+ - [Estrutura do repositório](#estrutura-do-repositório)
+ - [Compilar e carregar](#compilar-e-carregar)
++- [Prazos](#prazos)
+ 
+ ## Objetivo
+ 
+@@ -27,26 +28,37 @@ alimentado por USB e controlado por botões e por um terminal série no PC.
+ 
+ ## Modos de funcionamento
+ 
+-| Modo | Botão | Descrição |
+-| --- | --- | --- |
+-| 1 – Preset | B1 | Seleciona e toca uma música guardada na EEPROM nos 3 buzzers. Mantém-se ativo até o sistema ser desligado. |
+-| 2 – Live | B2 | O PC envia nota e duração por UART e os buzzers tocam em tempo real. |
+-| 3 – Reconfiguração | B3 | O PC envia uma trama do tipo MIDI; o sistema valida-a e grava-a na EEPROM. Os novos presets ficam guardados. |
++O botão B3 muda de modo. Um LED indica o modo ativo (LED1 = modo 1,
++LED2 = modo 2, LED3 = modo 3). Todos os modos usam os 3 buzzers.
++
++| Modo | Descrição |
++| --- | --- |
++| 1 – Preset | B1 toca a música 1 e B2 toca a música 2, ambas guardadas na EEPROM, nos 3 buzzers. |
++| 2 – Live | O PC envia buzzer, frequência e duração por UART e os buzzers tocam em tempo real. |
++| 3 – Reconfiguração | O PC envia uma trama do tipo MIDI; o sistema valida-a e grava-a na EEPROM (2 posições de preset). Os novos presets ficam guardados. |
+ 
+ ## Hardware
+ 
++Pinos usados no teste atual (placa Arduino com a mesma ligação do Tinkercad):
++
+ | Função | Pino Uno | Pino AVR |
+ | --- | --- | --- |
+-| Buzzer 1 | `TODO` | `TODO` |
+-| Buzzer 2 | `TODO` | `TODO` |
+-| Buzzer 3 | `TODO` | `TODO` |
+-| Botão 1 (preset) | `TODO` | `TODO` |
+-| Botão 2 (live) | `TODO` | `TODO` |
+-| Botão 3 (reconfiguração) | `TODO` | `TODO` |
++| Buzzer 1 | D8 | PB0 |
++| Buzzer 2 | D9 | PB1 |
++| Buzzer 3 | D10 | PB2 |
++| Botão 1 (música 1 no modo preset) | D2 | PD2 |
++| Botão 2 (música 2 no modo preset) | D3 | PD3 |
++| Botão 3 (muda de modo) | D4 | PD4 |
++| LED 1 (modo 1) | D5 | PD5 |
++| LED 2 (modo 2) | D6 | PD6 |
++| LED 3 (modo 3) | D7 | PD7 |
+ | UART RX/TX | D0/D1 | PD0/PD1 |
+ 
+ - Microcontrolador: ATmega328P a 16 MHz.
+ - Alimentação: USB (5 V).
++- Placa final: PCB própria de 2 camadas, ≤ 80 × 60 mm, desenhada em Altium 365,
++  com ponte USB-UART (por exemplo CH340) e conector ISP.
++- Simulação do circuito em Tinkercad.
+ - Usar buzzers passivos para reproduzir diferentes frequências.
+ - Verificar a corrente exigida por cada buzzer e usar um transistor como driver
+   quando necessário; não exceder o limite de corrente dos GPIO.
+@@ -57,19 +69,22 @@ Configuração: **9600 baud, 8 bits de dados, sem paridade, 1 stop bit (8-N-1)**
+ 
+ ### Modo live
+ 
+-Formato do comando (`TODO` confirmar):
++Formato do comando:
+ 
+ ```text
+-B<buzzer>_<nota ou frequência>_<duração>
++B<buzzer>_<frequência em Hz>_<duração em ms>
+ ```
+ 
+-Exemplo:
++Exemplo (buzzer 1, 300 Hz, 250 ms):
+ 
+ ```text
+-B1_440_500|B2_523_500|B3_659_500|
++B1_300_250
+ ```
+ 
+-- Os comandos terminam em `|`, CR ou LF.
++- Gama de frequências: 262 Hz a 1976 Hz (C4 a B6).
++- Gama de durações: 50 ms a 2000 ms.
++- `TODO` confirmar o separador/terminador de comandos quando se enviam vários
++  comandos seguidos.
+ - Cada comando recebe uma resposta de estado (aceite ou inválido).
+ 
+ ## Formato da trama de reconfiguração
+@@ -79,7 +94,7 @@ Trama do tipo MIDI enviada pelo PC no modo 3 (`TODO` definir campos finais):
+ | Campo | Tamanho | Descrição |
+ | --- | --- | --- |
+ | Cabeçalho | `TODO` | Marca de início da trama |
+-| Nº do preset | `TODO` | Posição da música na EEPROM |
++| Nº do preset | `TODO` | Posição da música na EEPROM (1 ou 2) |
+ | Nº de notas | `TODO` | Quantidade de eventos |
+ | Eventos | `TODO` | Nota, duração e buzzer de cada evento |
+ | Checksum | `TODO` | Validação da integridade |
+@@ -89,49 +104,52 @@ Trama do tipo MIDI enviada pelo PC no modo 3 (`TODO` definir campos finais):
+ 
+ ## Implementação
+ 
+-- `src/uart.c` – configura a USART0 e recebe bytes por interrupção para um
+-  buffer circular.
+-- `src/main.c` – máquina de estados dos 3 modos, leitura dos botões e
+-  interpretação dos comandos.
+-- `src/buzzer.c` – geração de tons de cada buzzer, com uma estrutura por buzzer
+-  (pino, frequência, duração restante).
+-- `src/eeprom.c` – leitura e escrita dos presets na EEPROM.
+-- `src/midi.c` – validação e descodificação da trama de reconfiguração.
+-- `include/` – cabeçalhos de cada módulo.
++- `src/1,1.cpp` – sketch Arduino de teste (3 botões, 3 LEDs, 3 buzzers), usado
++  para validar a ligação e os modos.
++- Módulos previstos para o firmware final em C (avr-gcc), ainda por criar:
++  `uart`, `main` (máquina de estados dos 3 modos), `buzzer`, `eeprom` e `midi`
++  (validação e descodificação da trama).
+ 
+ ## Fluxograma
+ 
+ ```mermaid
+ flowchart TD
+-  START([Reset]) --> INIT[Inicializar buzzers, botões, UART e EEPROM]
+-  INIT --> MODE{Botão premido?}
++  START([Reset]) --> INIT[Inicializar buzzers, botões, LEDs, UART e EEPROM]
++  INIT --> M1
++
++  M1[Modo 1 - Preset<br/>LED1 aceso]
++  M2[Modo 2 - Live<br/>LED2 aceso]
++  M3[Modo 3 - Reconfiguração<br/>LED3 aceso]
++
++  M1 -- B3 --> M2
++  M2 -- B3 --> M3
++  M3 -- B3 --> M1
+ 
+-  MODE -- B1 --> PRESET[Ler música da EEPROM]
+-  PRESET --> PLAY[Tocar nos 3 buzzers]
+-  PLAY --> MODE
++  M1 -- B1 --> P1[Ler música 1 da EEPROM e tocar nos 3 buzzers]
++  M1 -- B2 --> P2[Ler música 2 da EEPROM e tocar nos 3 buzzers]
++  P1 --> M1
++  P2 --> M1
+ 
+-  MODE -- B2 --> LIVE[Esperar comando UART]
+-  LIVE --> PARSE_LIVE{Comando válido?}
++  M2 --> CMD[Receber comando UART]
++  CMD --> PARSE_LIVE{Comando válido?}
+   PARSE_LIVE -- Sim --> TONE[Tocar nota no buzzer]
+   PARSE_LIVE -- Não --> ERR_LIVE[Enviar erro]
+-  TONE --> MODE
+-  ERR_LIVE --> MODE
++  TONE --> M2
++  ERR_LIVE --> M2
+ 
+-  MODE -- B3 --> RECV[Receber trama MIDI por UART]
++  M3 --> RECV[Receber trama MIDI por UART]
+   RECV --> VALID{Trama válida?}
+-  VALID -- Sim --> WRITE[Gravar na EEPROM]
++  VALID -- Sim --> WRITE[Gravar numa das 2 posições da EEPROM]
+   VALID -- Não --> ERR_MIDI[Enviar erro]
+-  WRITE --> MODE
+-  ERR_MIDI --> MODE
+-
+-  MODE -- Nenhum --> MODE
++  WRITE --> M3
++  ERR_MIDI --> M3
+ ```
+ 
+ ## Limites atuais
+ 
+-- `TODO` número máximo de músicas guardadas na EEPROM.
+-- `TODO` número máximo de notas por música.
+-- `TODO` gama de frequências suportada.
++- 2 músicas guardadas na EEPROM (presets 1 e 2).
++- `TODO` número máximo de notas por música (proposta: ≥ 64 eventos).
++- Gama de frequências: 262 Hz a 1976 Hz (proposta).
+ - A EEPROM do ATmega328P tem 1 KB, o que limita o espaço total para presets.
+ - A EEPROM tem um número limitado de ciclos de escrita; evitar regravações
+   desnecessárias.
+@@ -140,18 +158,21 @@ flowchart TD
+ 
+ ```text
+ .
+-├── docs/        # requisitos, estado da arte, perguntas ao cliente
+-├── hardware/    # esquemas (Multisim / Altium) e lista de materiais
+-├── include/
+-├── src/
++├── docs/        # requisitos, estado da arte, perguntas ao cliente, relatório E1
++├── src/         # código
+ └── README.md
+ ```
+ 
+ ## Compilar e carregar
+ 
+-```text
+-platformio run
+-platformio run --target upload
+-```
++Toolchain prevista: `avr-gcc` com `Makefile`, `avrdude` e programador ISP.
++
++`TODO` adicionar o `Makefile` e os comandos de compilação (`-Wall`) e de
++carregamento com `avrdude`.
++
++## Prazos
+ 
+-`TODO` ajustar se o projeto usar outra toolchain.
++- E1: 26/10/2026 (tag `E1` no Git)
++- E2: 05/11/2026
++- E3: 14/12/2026
++- PF: 28/01/2027
+diff --git a/docs/casos-de-uso-e-blocos.md b/docs/casos-de-uso-e-blocos.md
+index 927f264..f5c9829 100644
+--- a/docs/casos-de-uso-e-blocos.md
++++ b/docs/casos-de-uso-e-blocos.md
+@@ -15,9 +15,9 @@ flowchart LR
+   TEC["Utilizador técnico<br/>PC + terminal"]
+ 
+   subgraph SISTEMA["Sistema ATmega328P"]
+-    UC1(["UC1 Presets<br/>Tocar música guardada B1"])
+-    UC2(["UC2 Live<br/>Tocar notas em tempo real B2"])
+-    UC3(["UC3 Reconfiguração<br/>Gravar nova música B3"])
++    UC1(["UC1 Presets<br/>Tocar música 1 ou 2 (B1/B2)"])
++    UC2(["UC2 Live<br/>Tocar notas em tempo real"])
++    UC3(["UC3 Reconfiguração<br/>Gravar nova música"])
+ 
+     LER(["Ler preset da EEPROM"])
+     RECEBER(["Receber nota e duração por UART"])
+@@ -42,52 +42,52 @@ flowchart LR
+   class LER,RECEBER,VALIDAR,GRAVAR inc
+ ```
+ 
+-### UC1: Presets (botão B1)
++### UC1: Presets (botões B1 e B2)
+ 
+ - **Ator:** utilizador final.
+ - **Pré-condição:** sistema alimentado por USB e com pelo menos um preset na EEPROM.
+ - **Fluxo principal:**
+-  - O utilizador carrega em B1.
++  - Com o modo preset ativo (LED1 aceso), o utilizador carrega em B1 (música 1) ou B2 (música 2).
+   - O sistema lê o preset da EEPROM.
+   - O sistema toca a música nos 3 buzzers, uma voz por buzzer.
+   - O LED do modo preset acende.
+ - **Fluxos alternativos:**
+   - Se a EEPROM não tiver presets válidos, o sistema não toca e indica o erro.
+-  - Se o utilizador carregar noutro botão, o som é interrompido e muda o modo.
++  - Se o utilizador carregar em B3, o som é interrompido e o sistema muda de modo.
+ - **Pós-condição:** os presets mantêm-se guardados depois de desligar.
+-- **Requisitos associados:** RF01 a RF04, RF12, RF13.
++- **Requisitos associados:** RF01 a RF04, RF12 a RF14.
+ 
+-### UC2: Live (botão B2)
++### UC2: Live
+ 
+ - **Ator:** utilizador técnico.
+ - **Pré-condição:** PC ligado por USB e terminal aberto a 9600 baud.
+ - **Fluxo principal:**
+-  - O utilizador carrega em B2.
++  - O utilizador carrega em B3 até chegar ao modo live.
+   - O LED do modo live acende.
+-  - O PC envia a nota e a duração por UART.
++  - O PC envia o comando `B<buzzer>_<Hz>_<ms>` por UART (ex.: `B1_300_250`).
+   - O sistema recebe os dados e toca a nota em tempo real.
+ - **Fluxos alternativos:**
+   - Se a nota estiver fora da gama ou a duração for inválida, o sistema ignora o pedido e responde com erro.
+-  - Se o utilizador carregar noutro botão, o som é interrompido e muda o modo.
++  - Se o utilizador carregar em B3, o som é interrompido e o sistema muda de modo.
+ - **Pós-condição:** nada é gravado na EEPROM.
+-- **Requisitos associados:** RF01, RF05 a RF07, RF12, RF13.
++- **Requisitos associados:** RF01, RF05 a RF07, RF12 a RF14.
+ 
+-### UC3: Reconfiguração (botão B3)
++### UC3: Reconfiguração
+ 
+ - **Ator:** utilizador técnico.
+ - **Pré-condição:** PC ligado por USB e terminal aberto a 9600 baud.
+ - **Fluxo principal:**
+-  - O utilizador carrega em B3.
++  - O utilizador carrega em B3 até chegar ao modo de reconfiguração.
+   - O LED do modo de reconfiguração acende.
+   - O PC envia uma trama tipo MIDI por UART.
+   - O sistema valida a trama (cabeçalho, comprimento e checksum).
+-  - O sistema grava a música na EEPROM e responde "OK".
++  - O sistema grava a música numa das 2 posições de preset da EEPROM e responde "OK".
+   - A música fica disponível como novo preset em UC1.
+ - **Fluxos alternativos:**
+   - Se a trama for inválida, o sistema responde "ERRO" e não altera a EEPROM.
+   - Se a música não couber na EEPROM, o sistema responde com erro e mantém as músicas existentes.
+ - **Pós-condição:** os novos presets ficam guardados depois de desligar.
+-- **Requisitos associados:** RF08 a RF12.
++- **Requisitos associados:** RF08 a RF12, RF14.
+ 
+ ## Diagrama de blocos
+ 
+@@ -136,7 +136,7 @@ flowchart LR
+   - Firmware com os 3 modos.
+ - **Drivers:** 3 circuitos (transístor + resistência) que alimentam os buzzers a partir dos sinais do microcontrolador.
+ - **Buzzers:** 3 buzzers, um por voz.
+-- **Botões:** B1, B2 e B3, um por modo (3 entradas).
++- **Botões:** B1 e B2 tocam as músicas 1 e 2 no modo preset; B3 muda de modo (3 entradas).
+ - **LEDs de modo:** 3 LEDs com resistência em série, um por modo (3 saídas).
+ - **Alimentação:** 5 V vindos do USB para a ponte, o microcontrolador, os drivers e os buzzers, com GND comum.
+ 
+@@ -146,4 +146,4 @@ flowchart LR
+ - Tipo de buzzer (passivo, para gerar frequências diferentes) e corrente que consome, para dimensionar os drivers.
+ - Se o consumo total fica dentro de RNF01 (≤ 150 mA).
+ - Atribuição de pinos do ATmega328P (UART, 3 saídas de tom, 3 botões, 3 LEDs).
+-- Formato da trama do modo 3 (cabeçalho, comprimento, dados, checksum).
++- Formato da trama do modo 3 (cabeçalho, comprimento, dados, checksum), com 2 posições de preset.
+diff --git a/docs/especificacoes_trabalho.txt b/docs/especificacoes_trabalho.txt
+index 043cb3c..42dbaaf 100644
+--- a/docs/especificacoes_trabalho.txt
++++ b/docs/especificacoes_trabalho.txt
+@@ -1,22 +1,22 @@
+ objetivo:   Placa com ATmega328P que toca música em 3 buzzers piezoelétricos.
+-            Modo Presets: o botão toca uma música da EEPROM nos 3 buzzers.
++            Modo Presets: B1 e B2 tocam a música 1 e 2 da EEPROM nos 3 buzzers.
+             Modo Live: o PC envia nota e duração pela UART e toca em tempo real.
+             Modo Reconfiguração: o PC envia uma trama tipo MIDI, que é validada e gravada na EEPROM.
+ 
+ 
+-requesitos: RF1: P1/P2 tocam o preset 1/2 da EEPROM.
++requesitos: RF1: B1/B2 tocam o preset 1/2 da EEPROM.
+             RF2: os presets mantêm-se após 10 ciclos de power off/on.
+             RF3: modo Live toca a nota recebida pela UART.
+             RF4: valida a trama (checksum) e grava na EEPROM.
+             RF5: trama inválida → NACK e presets inalterados.
+-            RF6: botão M muda de modo e um LED indica o modo ativo.
++            RF6: botão B3 muda de modo e um LED indica o modo ativo.
+             RNF1: alimentação só por USB (5 V), consumo ≤ 150 mA (proposta).
+             RNF2: UART 8N1 a 9600 bit/s.
+             RNF3: até 3 notas em simultâneo (uma por buzzer).
+             RNF4: firmware em C (avr-gcc), sem avisos com -Wall.
+ 
+-interface:  Botões P1, P2 e M (proposta).
+-            LED(s) de estado.
++interface:  Botões B1, B2 e B3.
++            3 LEDs, um por modo.
+             USB com ponte USB-UART (por ex. CH340) para terminal/pyserial.
+             3 buzzers, cada um numa saída de timer (PWM/CTC).
+             Conector ISP para programação.
+@@ -33,9 +33,9 @@ ligaçao:PC ↔ USB ↔ ponte USB-UART ↔ USART0.
+         Timer → driver → buzzer (×3).
+         Botões e LEDs em GPIO.
+ 
+-funcionamento:M:Presets → Live → Reconfiguração, com o LED a mostrar o modo.
+-                P1/P2 (modo Presets): tocam o preset 1 ou 2.
+-                Modo Live: comandado pelo terminal.
++funcionamento:B3: Presets → Live → Reconfiguração, com o LED a mostrar o modo.
++                B1/B2 (modo Presets): tocam o preset 1 ou 2.
++                Modo Live: comandado pelo terminal (B<buzzer>_<Hz>_<ms>, ex.: B1_300_250).
+                 Modo Reconfiguração: o PC envia a trama e a placa responde ACK ou NACK.
+                 Por decidir: como parar a reprodução (UC3 da A02).
+                 
+@@ -44,5 +44,6 @@ tamanho:PCB de 2 camadas, ≤ 80 × 60 mm (proposta)
+ prazo:  E1: 26/10/2026, até às 23h59 (tag E1 no Git).
+         E2: 05/11/2026.
+         E3: 14/12/2026.
++        PF: 28/01/2027.
+         
+ 
+diff --git a/docs/lista-de-requisitos.md b/docs/lista-de-requisitos.md
+index 0fe3b1c..df28f5e 100644
+--- a/docs/lista-de-requisitos.md
++++ b/docs/lista-de-requisitos.md
+@@ -1,7 +1,7 @@
+ # Lista de Requisitos
+ 
+ **Projeto:** Sistema musical com 3 buzzers (ATmega328P)
+-**Versão:** 0.1 (rascunho)
++**Versão:** 0.2 (rascunho)
+ 
+ ## Legenda
+ 
+@@ -10,7 +10,7 @@
+   - **Ensaio:** teste funcional com resultado passa/falha.
+   - **Medição:** valor medido com instrumento (multímetro, osciloscópio, cronómetro).
+   - **Inspeção:** verificação visual ou documental.
+-  - **Simulação:** resultado obtido em Multisim.
++  - **Simulação:** resultado obtido em Tinkercad.
+   - **DRC:** Design Rule Check no Altium (0 erros).
+ 
+ ## 1. Requisitos funcionais (RF)
+@@ -18,18 +18,19 @@
+ | ID | Requisito | Critério | Verificação | Origem |
+ |----|-----------|----------|-------------|--------|
+ | RF01 | O sistema toca música em 3 buzzers em simultâneo, uma voz por buzzer. | 3 sinais distintos e simultâneos, um em cada buzzer | Ensaio + medição (osciloscópio) | C |
+-| RF02 | O botão B1 seleciona e inicia uma música guardada na EEPROM (modo preset). | Som começa ≤ 500 ms após carregar no botão | Medição (cronómetro) | C |
+-| RF03 | O sistema guarda vários presets na EEPROM. | ≥ 3 presets, cada um com ≥ 64 eventos de nota | Ensaio | P |
++| RF02 | No modo preset, o botão B1 toca a música 1 e o botão B2 toca a música 2, guardadas na EEPROM. | Som começa ≤ 500 ms após carregar no botão | Medição (cronómetro) | C |
++| RF03 | O sistema guarda 2 presets na EEPROM. | 2 presets, cada um com ≥ 64 eventos de nota | Ensaio | P |
+ | RF04 | Os presets mantêm-se depois de desligar a alimentação. | 10 ciclos de ligar/desligar sem perda de dados | Ensaio | C |
+-| RF05 | O botão B2 ativa o modo live: o PC envia a nota e a duração por UART e o sistema toca em tempo real. | Latência ≤ 50 ms entre o último byte recebido e o início do som | Medição (osciloscópio) | C |
++| RF05 | No modo live, o PC envia o buzzer, a frequência e a duração por UART (comando `B<buzzer>_<Hz>_<ms>`, ex.: `B1_300_250`) e o sistema toca em tempo real. | Latência ≤ 50 ms entre o último byte recebido e o início do som | Medição (osciloscópio) | C |
+ | RF06 | No modo live, o sistema toca notas na gama C4 a B6. | 262 Hz a 1976 Hz, erro de frequência ≤ 2 % | Medição (osciloscópio) | P |
+ | RF07 | O sistema respeita a duração pedida para cada nota. | 50 ms a 2000 ms, erro ≤ 5 % | Medição (osciloscópio) | P |
+-| RF08 | O botão B3 ativa o modo de reconfiguração: o PC envia uma trama tipo MIDI por UART. | Trama recebida completa em 100 % de 10 envios | Ensaio | C |
++| RF08 | No modo de reconfiguração, o PC envia uma trama tipo MIDI por UART. | Trama recebida completa em 100 % de 10 envios | Ensaio | C |
+ | RF09 | O sistema valida a trama (cabeçalho, comprimento e checksum) antes de gravar. | 10 de 10 tramas inválidas rejeitadas, EEPROM inalterada | Ensaio | C |
+-| RF10 | Uma trama válida é gravada na EEPROM e fica disponível como novo preset. | Preset novo tocável após gravar e após reiniciar | Ensaio | C |
++| RF10 | Uma trama válida é gravada numa das 2 posições de preset da EEPROM e fica disponível como novo preset. | Preset novo tocável após gravar e após reiniciar | Ensaio | C |
+ | RF11 | O sistema responde ao PC com confirmação ("OK") ou erro ("ERRO") após cada trama. | 100 % das tramas com resposta em ≤ 200 ms | Ensaio + medição | P |
+-| RF12 | O sistema indica o modo ativo com LEDs. | 1 LED por modo, aceso só no modo ativo | Inspeção + ensaio | P |
+-| RF13 | Ao mudar de modo, o som atual é interrompido. | Som parado ≤ 100 ms após carregar no botão | Medição (osciloscópio) | P |
++| RF12 | O sistema indica o modo ativo com LEDs (LED1 = modo 1, LED2 = modo 2, LED3 = modo 3). | 1 LED por modo, aceso só no modo ativo | Inspeção + ensaio | P |
++| RF13 | Ao mudar de modo, o som atual é interrompido. | Som parado ≤ 100 ms após carregar em B3 | Medição (osciloscópio) | P |
++| RF14 | O botão B3 muda de modo (1 preset, 2 live, 3 reconfiguração). | Cada pressão de B3 muda o modo e o LED correspondente acende | Ensaio | P |
+ 
+ ## 2. Requisitos não funcionais (RNF)
+ 
+@@ -40,7 +41,7 @@
+ | RNF03 | Tempo de arranque. | Pronto a receber um comando ≤ 1 s após ligar | Medição (cronómetro) | P |
+ | RNF04 | Fiabilidade das músicas guardadas. | 50 ciclos de ligar/desligar sem perda ou corrupção de presets | Ensaio | P |
+ | RNF05 | Qualidade da comunicação. | 0 erros em 100 mensagens enviadas a 9600 baud | Ensaio | P |
+-| RNF06 | Dimensões da montagem. | ≤ 100 mm × 80 mm (a confirmar com o cliente) | Medição | P |
++| RNF06 | Dimensões da PCB (2 camadas). | ≤ 80 mm × 60 mm (a confirmar com o cliente) | Medição | P |
+ | RNF07 | Custo dos componentes (BOM). | ≤ 20 € (a confirmar com o cliente) | Inspeção (BOM) | P |
+ | RNF08 | Documentação completa no repositório Git. | Esquema, BOM, código comentado e README presentes | Inspeção | P |
+ | RNF09 | Projeto do circuito em Altium sem erros de regras. | DRC com 0 erros | DRC | P |
+@@ -55,10 +56,10 @@
+ | RE04 | Comunicação série. | UART a 9600 baud | Ensaio | C |
+ | RE05 | Armazenamento das músicas. | EEPROM interna do ATmega328P (1024 bytes) | Inspeção | C |
+ | RE06 | Ferramentas de projeto. | Simulação em Tinkercad e esquema/PCB em Altium 365 | Inspeção | P |
+-| RE07 | Prazo de entrega. | [data a confirmar com o cliente] | Inspeção | C |
++| RE07 | Prazos de entrega. | E1: 26/10/2026; E2: 05/11/2026; E3: 14/12/2026; PF: 28/01/2027 | Inspeção | C |
+ 
+ ## 4. Notas para validar com o cliente
+ 
+ - Os valores marcados com `P` (consumo, gama de notas, tempos, dimensões, custo) são propostas e devem ser confirmados ou ajustados.
+-- Capacidade da EEPROM: 3 presets de 64 eventos com 3 bytes por evento ocupam cerca de 576 bytes dos 1024 disponíveis. Ajustar se o formato da trama mudar.
+-- Falta fechar: orçamento, tamanho e prazo.
++- Capacidade da EEPROM: 2 presets de 64 eventos com 3 bytes por evento ocupam cerca de 384 bytes dos 1024 disponíveis. Ajustar se o formato da trama mudar.
++- Falta fechar: orçamento e tamanho.
+diff --git a/docs/problem-statement.md b/docs/problem-statement.md
+index e8e80be..d9e9bf7 100644
+--- a/docs/problem-statement.md
++++ b/docs/problem-statement.md
+@@ -1,7 +1,7 @@
+ # Problem Statement
+ 
+ **Projeto:** Sistema musical com 3 buzzers (ATmega328P)
+-**Grupo:** [nomes e números]
++**Grupo:** 8 (Luís Miranda e Rodrigo) [números]
+ **Data:** [data]
+ 
+ ## 1. Contexto
+@@ -23,14 +23,14 @@
+ ## 4. Objetivo
+ 
+ - Desenvolver um sistema com ATmega328P que toca música em 3 buzzers e funciona em 3 modos:
+-  - **Preset:** um botão seleciona e toca uma música guardada na EEPROM.
++  - **Preset:** os botões B1 e B2 tocam as músicas 1 e 2 guardadas na EEPROM.
+   - **Live:** o PC envia por UART a nota e a duração, que tocam em tempo real.
+   - **Reconfiguração:** o PC envia uma trama tipo MIDI que o sistema valida e grava na EEPROM, ficando disponível como novo preset.
+ 
+ ## 5. Âmbito
+ 
+ **Inclui:**
+-- Hardware com ATmega328P, 3 buzzers e 3 botões (um por modo), alimentado por USB.
++- Hardware com ATmega328P, 3 buzzers, 3 botões (B3 muda de modo; B1 e B2 tocam as músicas 1 e 2 no modo preset) e 3 LEDs (um por modo), alimentado por USB.
+ - Comunicação UART com o PC a 9600 baud.
+ - Armazenamento de músicas na EEPROM e validação das tramas recebidas.
+ - Simulação do circuito (Tinkercad) e montagem física em laboratório.
+@@ -46,8 +46,8 @@
+ ## 6. Sucesso
+ 
+ - Os 3 buzzers tocam em simultâneo, cada um com a sua voz.
+-- No modo preset, o botão seleciona e toca a música guardada, e esta persiste depois de desligar.
++- No modo preset, B1 e B2 tocam as músicas guardadas, e estas persistem depois de desligar.
+ - No modo live, as notas enviadas por UART tocam em tempo real com a duração pedida.
+-- No modo de reconfiguração, uma trama válida é gravada na EEPROM e uma inválida é rejeitada sem corromper as músicas já guardadas.
++- No modo de reconfiguração, uma trama válida é gravada na EEPROM (2 posições) e uma inválida é rejeitada sem corromper as músicas já guardadas.
+ - O sistema funciona só com alimentação USB.
+ - [critério de custo/prazo, a confirmar com o cliente]

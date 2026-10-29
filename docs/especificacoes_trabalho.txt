@@ -1,22 +1,22 @@
 objetivo:   Placa com ATmega328P que toca música em 3 buzzers piezoelétricos.
-            Modo Presets: o botão toca uma música da EEPROM nos 3 buzzers.
+            Modo Presets: B1 e B2 tocam a música 1 e 2 da EEPROM nos 3 buzzers.
             Modo Live: o PC envia nota e duração pela UART e toca em tempo real.
             Modo Reconfiguração: o PC envia uma trama tipo MIDI, que é validada e gravada na EEPROM.
 
 
-requesitos: RF1: P1/P2 tocam o preset 1/2 da EEPROM.
+requesitos: RF1: B1/B2 tocam o preset 1/2 da EEPROM.
             RF2: os presets mantêm-se após 10 ciclos de power off/on.
             RF3: modo Live toca a nota recebida pela UART.
             RF4: valida a trama (checksum) e grava na EEPROM.
             RF5: trama inválida → NACK e presets inalterados.
-            RF6: botão M muda de modo e um LED indica o modo ativo.
+            RF6: botão B3 muda de modo e um LED indica o modo ativo.
             RNF1: alimentação só por USB (5 V), consumo ≤ 150 mA (proposta).
             RNF2: UART 8N1 a 9600 bit/s.
             RNF3: até 3 notas em simultâneo (uma por buzzer).
             RNF4: firmware em C (avr-gcc), sem avisos com -Wall.
 
-interface:  Botões P1, P2 e M (proposta).
-            LED(s) de estado.
+interface:  Botões B1, B2 e B3.
+            3 LEDs, um por modo.
             USB com ponte USB-UART (por ex. CH340) para terminal/pyserial.
             3 buzzers, cada um numa saída de timer (PWM/CTC).
             Conector ISP para programação.
@@ -33,9 +33,9 @@ ligaçao:PC ↔ USB ↔ ponte USB-UART ↔ USART0.
         Timer → driver → buzzer (×3).
         Botões e LEDs em GPIO.
 
-funcionamento:M:Presets → Live → Reconfiguração, com o LED a mostrar o modo.
-                P1/P2 (modo Presets): tocam o preset 1 ou 2.
-                Modo Live: comandado pelo terminal.
+funcionamento:B3: Presets → Live → Reconfiguração, com o LED a mostrar o modo.
+                B1/B2 (modo Presets): tocam o preset 1 ou 2.
+                Modo Live: comandado pelo terminal (B<buzzer>_<Hz>_<ms>, ex.: B1_300_250).
                 Modo Reconfiguração: o PC envia a trama e a placa responde ACK ou NACK.
                 Por decidir: como parar a reprodução (UC3 da A02).
                 
@@ -44,5 +44,6 @@ tamanho:PCB de 2 camadas, ≤ 80 × 60 mm (proposta)
 prazo:  E1: 26/10/2026, até às 23h59 (tag E1 no Git).
         E2: 05/11/2026.
         E3: 14/12/2026.
+        PF: 28/01/2027.
         
 

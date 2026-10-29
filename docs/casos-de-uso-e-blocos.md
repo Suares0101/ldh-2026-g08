@@ -15,9 +15,9 @@ flowchart LR
   TEC["Utilizador técnico<br/>PC + terminal"]
 
   subgraph SISTEMA["Sistema ATmega328P"]
-    UC1(["UC1 Presets<br/>Tocar música guardada B1"])
-    UC2(["UC2 Live<br/>Tocar notas em tempo real B2"])
-    UC3(["UC3 Reconfiguração<br/>Gravar nova música B3"])
+    UC1(["UC1 Presets<br/>Tocar música 1 ou 2 (B1/B2)"])
+    UC2(["UC2 Live<br/>Tocar notas em tempo real"])
+    UC3(["UC3 Reconfiguração<br/>Gravar nova música"])
 
     LER(["Ler preset da EEPROM"])
     RECEBER(["Receber nota e duração por UART"])
@@ -42,52 +42,52 @@ flowchart LR
   class LER,RECEBER,VALIDAR,GRAVAR inc
 ```
 
-### UC1: Presets (botão B1)
+### UC1: Presets (botões B1 e B2)
 
 - **Ator:** utilizador final.
 - **Pré-condição:** sistema alimentado por USB e com pelo menos um preset na EEPROM.
 - **Fluxo principal:**
-  - O utilizador carrega em B1.
+  - Com o modo preset ativo (LED1 aceso), o utilizador carrega em B1 (música 1) ou B2 (música 2).
   - O sistema lê o preset da EEPROM.
   - O sistema toca a música nos 3 buzzers, uma voz por buzzer.
   - O LED do modo preset acende.
 - **Fluxos alternativos:**
   - Se a EEPROM não tiver presets válidos, o sistema não toca e indica o erro.
-  - Se o utilizador carregar noutro botão, o som é interrompido e muda o modo.
+  - Se o utilizador carregar em B3, o som é interrompido e o sistema muda de modo.
 - **Pós-condição:** os presets mantêm-se guardados depois de desligar.
-- **Requisitos associados:** RF01 a RF04, RF12, RF13.
+- **Requisitos associados:** RF01 a RF04, RF12 a RF14.
 
-### UC2: Live (botão B2)
+### UC2: Live
 
 - **Ator:** utilizador técnico.
 - **Pré-condição:** PC ligado por USB e terminal aberto a 9600 baud.
 - **Fluxo principal:**
-  - O utilizador carrega em B2.
+  - O utilizador carrega em B3 até chegar ao modo live.
   - O LED do modo live acende.
-  - O PC envia a nota e a duração por UART.
+  - O PC envia o comando `B<buzzer>_<Hz>_<ms>` por UART (ex.: `B1_300_250`).
   - O sistema recebe os dados e toca a nota em tempo real.
 - **Fluxos alternativos:**
   - Se a nota estiver fora da gama ou a duração for inválida, o sistema ignora o pedido e responde com erro.
-  - Se o utilizador carregar noutro botão, o som é interrompido e muda o modo.
+  - Se o utilizador carregar em B3, o som é interrompido e o sistema muda de modo.
 - **Pós-condição:** nada é gravado na EEPROM.
-- **Requisitos associados:** RF01, RF05 a RF07, RF12, RF13.
+- **Requisitos associados:** RF01, RF05 a RF07, RF12 a RF14.
 
-### UC3: Reconfiguração (botão B3)
+### UC3: Reconfiguração
 
 - **Ator:** utilizador técnico.
 - **Pré-condição:** PC ligado por USB e terminal aberto a 9600 baud.
 - **Fluxo principal:**
-  - O utilizador carrega em B3.
+  - O utilizador carrega em B3 até chegar ao modo de reconfiguração.
   - O LED do modo de reconfiguração acende.
   - O PC envia uma trama tipo MIDI por UART.
   - O sistema valida a trama (cabeçalho, comprimento e checksum).
-  - O sistema grava a música na EEPROM e responde "OK".
+  - O sistema grava a música numa das 2 posições de preset da EEPROM e responde "OK".
   - A música fica disponível como novo preset em UC1.
 - **Fluxos alternativos:**
   - Se a trama for inválida, o sistema responde "ERRO" e não altera a EEPROM.
   - Se a música não couber na EEPROM, o sistema responde com erro e mantém as músicas existentes.
 - **Pós-condição:** os novos presets ficam guardados depois de desligar.
-- **Requisitos associados:** RF08 a RF12.
+- **Requisitos associados:** RF08 a RF12, RF14.
 
 ## Diagrama de blocos
 
@@ -136,7 +136,7 @@ flowchart LR
   - Firmware com os 3 modos.
 - **Drivers:** 3 circuitos (transístor + resistência) que alimentam os buzzers a partir dos sinais do microcontrolador.
 - **Buzzers:** 3 buzzers, um por voz.
-- **Botões:** B1, B2 e B3, um por modo (3 entradas).
+- **Botões:** B1 e B2 tocam as músicas 1 e 2 no modo preset; B3 muda de modo (3 entradas).
 - **LEDs de modo:** 3 LEDs com resistência em série, um por modo (3 saídas).
 - **Alimentação:** 5 V vindos do USB para a ponte, o microcontrolador, os drivers e os buzzers, com GND comum.
 
@@ -146,4 +146,4 @@ flowchart LR
 - Tipo de buzzer (passivo, para gerar frequências diferentes) e corrente que consome, para dimensionar os drivers.
 - Se o consumo total fica dentro de RNF01 (≤ 150 mA).
 - Atribuição de pinos do ATmega328P (UART, 3 saídas de tom, 3 botões, 3 LEDs).
-- Formato da trama do modo 3 (cabeçalho, comprimento, dados, checksum).
+- Formato da trama do modo 3 (cabeçalho, comprimento, dados, checksum), com 2 posições de preset.
