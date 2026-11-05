@@ -1,47 +1,48 @@
-#include <Arduino.h>
+#include <avr/io.h>
 #include "buttons.h"
+#include "buzzer.h"
 #include "config.h"
 
-namespace {
+typedef struct {
+  bool stable_high;
+  bool last_reading_high;
+  uint32_t changed_at_ms;
+} ButtonState;
 
-struct ButtonState {
-  bool stableHigh;
-  bool lastReadingHigh;
-  uint32_t changedAtMs;
-};
+static ButtonState buttons[BUZZER_COUNT];
 
-ButtonState buttons[BUZZER_COUNT] = {};
+void buttons_init(void) {
+  uint8_t i;
+  const uint32_t now = buzzer_millis();
 
-}
-
-void buttonsInit() {
-  const uint32_t now = millis();
-  for (uint8_t i = 0; i < BUZZER_COUNT; ++i) {
-    const bool reading = digitalRead(BUTTON_PINS[i]) == HIGH;
-    buttons[i].stableHigh = reading;
-    buttons[i].lastReadingHigh = reading;
-    buttons[i].changedAtMs = now;
+  for (i = 0; i < BUZZER_COUNT; ++i) {
+    const bool reading_high = (PIND & BUTTON_BITS[i]) != 0;
+    buttons[i].stable_high = reading_high;
+    buttons[i].last_reading_high = reading_high;
+    buttons[i].changed_at_ms = now;
   }
 }
 
-bool buttonPressed(uint8_t index) {
+bool button_pressed(uint8_t index) {
+  bool reading_high;
+  uint32_t now;
+
   if (index >= BUZZER_COUNT) {
     return false;
   }
 
-  const bool readingHigh = digitalRead(BUTTON_PINS[index]) == HIGH;
-  const uint32_t now = millis();
-
-  if (readingHigh != buttons[index].lastReadingHigh) {
-    buttons[index].lastReadingHigh = readingHigh;
-    buttons[index].changedAtMs = now;
+  reading_high = (PIND & BUTTON_BITS[index]) != 0;
+  now = buzzer_millis();
+  if (reading_high != buttons[index].last_reading_high) {
+    buttons[index].last_reading_high = reading_high;
+    buttons[index].changed_at_ms = now;
   }
 
-  if (static_cast<uint32_t>(now - buttons[index].changedAtMs) < 30 ||
-      readingHigh == buttons[index].stableHigh) {
+  if ((uint32_t)(now - buttons[index].changed_at_ms) < 30U ||
+      reading_high == buttons[index].stable_high) {
     return false;
   }
 
-  buttons[index].stableHigh = readingHigh;
-  return !readingHigh;
+  buttons[index].stable_high = reading_high;
+  return !reading_high;
 }

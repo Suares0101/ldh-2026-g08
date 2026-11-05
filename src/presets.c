@@ -1,153 +1,151 @@
-#include <Arduino.h>
-#include <EEPROM.h>
+#include <avr/eeprom.h>
+#include <avr/pgmspace.h>
 #include "buzzer.h"
 #include "config.h"
 #include "presets.h"
+#include "uart.h"
 
-namespace {
+typedef struct {
+  uint8_t scan_index;
+  uint8_t waiting;
+  uint8_t finished;
+  uint32_t event_started_at_ms;
+  uint16_t event_duration_ms;
+} VoiceState;
 
-struct VoiceState {
-  uint8_t scanIndex;
-  bool waiting;
-  bool finished;
-  uint32_t eventStartedAtMs;
-  uint16_t eventDurationMs;
-};
+static VoiceState voices[BUZZER_COUNT];
+static uint8_t playing;
+static uint8_t playing_slot;
+static uint8_t event_count;
 
-VoiceState voices[BUZZER_COUNT] = {};
-bool playing = false;
-uint8_t playingSlot = 0;
-uint8_t eventCount = 0;
-
-uint16_t slotAddress(uint8_t slot) {
-  return static_cast<uint16_t>(slot - 1) * SLOT_SIZE;
+static uint16_t slot_address(uint8_t slot) {
+  return (uint16_t)(slot - 1U) * SLOT_SIZE;
 }
 
-bool validPreset(uint8_t slot, uint8_t &count) {
-  if (slot < 1 || slot > 2) {
-    return false;
+static uint8_t preset_valid(uint8_t slot, uint8_t *count) {
+  uint16_t address;
+
+  if (slot < 1U || slot > 2U) {
+    return 0;
+  }
+  address = slot_address(slot);
+  if (eeprom_read_byte((const uint8_t *)(uintptr_t)address) != EEPROM_MAGIC) {
+    return 0;
   }
 
-  const uint16_t address = slotAddress(slot);
-  if (EEPROM.read(address) != EEPROM_MAGIC) {
-    return false;
-  }
-
-  count = EEPROM.read(address + 1);
-  return count > 0 && count <= MAX_EVENTS;
+  *count = eeprom_read_byte((const uint8_t *)(uintptr_t)(address + 1U));
+  return *count > 0U && *count <= MAX_EVENTS;
 }
 
-bool readEvent(uint8_t index, uint8_t &channel, uint8_t &note,
-               uint8_t &duration) {
-  if (index >= eventCount) {
-    return false;
-  }
+static uint8_t read_event(uint8_t index, uint8_t *channel, uint8_t *note,
+                          uint8_t *duration) {
+  uint16_t address;
 
-  const uint16_t address = slotAddress(playingSlot) + 2 +
-                           static_cast<uint16_t>(index) * EVENT_SIZE;
-  channel = EEPROM.read(address);
-  note = EEPROM.read(address + 1);
-  duration = EEPROM.read(address + 2);
-  return channel >= 1 && channel <= BUZZER_COUNT &&
-         (note == 0 || (note >= MIDI_MIN_NOTE && note <= MIDI_MAX_NOTE)) &&
-         duration >= MIDI_MIN_DURATION && duration <= MIDI_MAX_DURATION;
+  if (index >= event_count) {
+    return 0;
+  }
+  address = slot_address(playing_slot) + 2U + (uint16_t)index * EVENT_SIZE;
+  *channel = eeprom_read_byte((const uint8_t *)(uintptr_t)address);
+  *note = eeprom_read_byte((const uint8_t *)(uintptr_t)(address + 1U));
+  *duration = eeprom_read_byte((const uint8_t *)(uintptr_t)(address + 2U));
+
+  return *channel >= 1U && *channel <= BUZZER_COUNT &&
+         (*note == 0U || (*note >= MIDI_MIN_NOTE && *note <= MIDI_MAX_NOTE)) &&
+         *duration >= MIDI_MIN_DURATION && *duration <= MIDI_MAX_DURATION;
 }
 
-// Cada voz procura os seus eventos sem bloquear as restantes.
-void scheduleNextEvent(uint8_t voiceIndex, uint32_t nowMs) {
-  VoiceState &voice = voices[voiceIndex];
+static void schedule_next_event(uint8_t voice_index, uint32_t now_ms) {
+  VoiceState *voice = &voices[voice_index];
 
-  while (voice.scanIndex < eventCount) {
+  while (voice->scan_index < event_count) {
     uint8_t channel;
     uint8_t note;
     uint8_t duration;
-    const uint8_t index = voice.scanIndex++;
+    const uint8_t index = voice->scan_index++;
 
-    if (!readEvent(index, channel, note, duration)) {
-      voice.finished = true;
-      buzzerStop(voiceIndex);
+    if (!read_event(index, &channel, &note, &duration)) {
+      voice->finished = 1;
+      buzzer_stop(voice_index);
       return;
     }
-    if (channel != voiceIndex + 1) {
+    if (channel != voice_index + 1U) {
       continue;
     }
 
-    voice.waiting = true;
-    voice.eventStartedAtMs = nowMs;
-    voice.eventDurationMs = static_cast<uint16_t>(duration) * 10;
-    buzzerStart(voiceIndex, midiNoteFrequency(note), voice.eventDurationMs);
+    voice->waiting = 1;
+    voice->event_started_at_ms = now_ms;
+    voice->event_duration_ms = (uint16_t)duration * 10U;
+    buzzer_start(voice_index, midi_note_frequency(note), voice->event_duration_ms);
     return;
   }
 
-  voice.finished = true;
-  voice.waiting = false;
-  buzzerStop(voiceIndex);
+  voice->finished = 1;
+  voice->waiting = 0;
+  buzzer_stop(voice_index);
 }
 
+void preset_stop_playback(void) {
+  playing = 0;
 }
 
-void presetStopPlayback() {
-  playing = false;
-}
-
-void presetPlay(uint8_t slot) {
-  playing = false;
-  buzzerStopAll();
-
+void preset_play(uint8_t slot) {
   uint8_t count;
-  if (!validPreset(slot, count)) {
-    Serial.print(F("ERRO: musica "));
-    Serial.print(slot);
-    Serial.println(F(" vazia ou invalida"));
+  uint8_t i;
+
+  playing = 0;
+  buzzer_stop_all();
+  if (!preset_valid(slot, &count)) {
+    uart_write_string_P(PSTR("ERRO: musica vazia ou invalida\r\n"));
     return;
   }
 
-  playingSlot = slot;
-  eventCount = count;
-  playing = true;
-
-  for (uint8_t i = 0; i < BUZZER_COUNT; ++i) {
-    voices[i].scanIndex = 0;
-    voices[i].waiting = false;
-    voices[i].finished = false;
-    scheduleNextEvent(i, millis());
+  playing_slot = slot;
+  event_count = count;
+  playing = 1;
+  for (i = 0; i < BUZZER_COUNT; ++i) {
+    voices[i].scan_index = 0;
+    voices[i].waiting = 0;
+    voices[i].finished = 0;
+    schedule_next_event(i, buzzer_millis());
   }
 
-  Serial.print(F("A tocar musica "));
-  Serial.println(slot);
+  uart_write_string_P(PSTR("A tocar musica "));
+  uart_write_u16(slot);
+  uart_write_string_P(PSTR("\r\n"));
 }
 
-void presetUpdate() {
+void preset_update(void) {
+  uint8_t i;
+  uint8_t all_finished = 1;
+  const uint32_t now = buzzer_millis();
+
   if (!playing) {
     return;
   }
 
-  const uint32_t now = millis();
-  bool allFinished = true;
-
-  for (uint8_t i = 0; i < BUZZER_COUNT; ++i) {
-    VoiceState &voice = voices[i];
-    if (voice.finished) {
+  for (i = 0; i < BUZZER_COUNT; ++i) {
+    VoiceState *voice = &voices[i];
+    if (voice->finished) {
       continue;
     }
-    allFinished = false;
+    all_finished = 0;
 
-    if (voice.waiting &&
-        static_cast<uint32_t>(now - voice.eventStartedAtMs) >= voice.eventDurationMs) {
-      voice.waiting = false;
-      buzzerStop(i);
+    if (voice->waiting &&
+        (uint32_t)(now - voice->event_started_at_ms) >= voice->event_duration_ms) {
+      voice->waiting = 0;
+      buzzer_stop(i);
     }
-    if (!voice.waiting) {
-      scheduleNextEvent(i, now);
+    if (!voice->waiting) {
+      schedule_next_event(i, now);
     }
   }
 
-  for (uint8_t i = 0; i < BUZZER_COUNT; ++i) {
+  for (i = 0; i < BUZZER_COUNT; ++i) {
     if (!voices[i].finished) {
-      allFinished = false;
+      all_finished = 0;
     }
   }
-  if (allFinished) {
-    playing = false;
+  if (all_finished) {
+    playing = 0;
   }
 }

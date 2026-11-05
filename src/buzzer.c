@@ -1,100 +1,148 @@
-#include <Arduino.h>
+#include <avr/interrupt.h>
+#include <avr/io.h>
+#include <util/atomic.h>
 #include "buzzer.h"
 #include "config.h"
 
-namespace {
+#define TIMER_TICK_US 20U
+#define TIMER_TICKS_PER_MS (1000U / TIMER_TICK_US)
 
-struct BuzzerState {
-  bool active;
-  bool outputHigh;
-  uint16_t halfPeriodUs;
-  uint32_t nextToggleUs;
-  uint32_t startedAtMs;
-  uint16_t durationMs;
-};
+typedef struct {
+  volatile uint8_t active;
+  volatile uint8_t output_high;
+  volatile uint16_t half_period_us;
+  volatile uint16_t phase_us;
+  volatile uint32_t remaining_ticks;
+} BuzzerState;
 
-BuzzerState buzzers[BUZZER_COUNT] = {};
+static volatile BuzzerState buzzers[BUZZER_COUNT];
+static volatile uint32_t elapsed_ms;
+static volatile uint8_t ticks_in_ms;
 
-const uint16_t NOTE_FREQUENCIES[MIDI_MAX_NOTE - MIDI_MIN_NOTE + 1] = {
+static const uint16_t NOTE_FREQUENCIES[MIDI_MAX_NOTE - MIDI_MIN_NOTE + 1U] = {
   262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494,
   523, 554, 587, 622, 659, 698, 740, 784, 831, 880, 932, 988,
   1047, 1109, 1175, 1245, 1319, 1397, 1480, 1568, 1661, 1760, 1865, 1976
 };
 
+static void buzzer_pin_low(uint8_t index) {
+  PORTB &= (uint8_t)~BUZZER_BITS[index];
 }
 
-void buzzerInit() {
-  for (uint8_t i = 0; i < BUZZER_COUNT; ++i) {
-    pinMode(BUZZER_PINS[i], OUTPUT);
-    digitalWrite(BUZZER_PINS[i], LOW);
+void buzzer_init(void) {
+  uint8_t i;
+
+  for (i = 0; i < BUZZER_COUNT; ++i) {
+    DDRB |= BUZZER_BITS[i];
+    buzzer_pin_low(i);
+    buzzers[i].active = 0;
+    buzzers[i].output_high = 0;
+    buzzers[i].phase_us = 0;
+    buzzers[i].remaining_ticks = 0;
   }
+
+  elapsed_ms = 0;
+  ticks_in_ms = 0;
+
+  // Timer2 gera uma interrupção a cada 20 us para atualizar os três tons.
+  TCCR2A = _BV(WGM21);
+  TCCR2B = _BV(CS21);
+  OCR2A = 39U;
+  TIMSK2 = _BV(OCIE2A);
 }
 
-void buzzerStop(uint8_t index) {
+void buzzer_stop(uint8_t index) {
   if (index >= BUZZER_COUNT) {
     return;
   }
 
-  buzzers[index].active = false;
-  buzzers[index].outputHigh = false;
-  digitalWrite(BUZZER_PINS[index], LOW);
-}
-
-void buzzerStopAll() {
-  for (uint8_t i = 0; i < BUZZER_COUNT; ++i) {
-    buzzerStop(i);
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    buzzers[index].active = 0;
+    buzzers[index].output_high = 0;
+    buzzers[index].remaining_ticks = 0;
+    buzzer_pin_low(index);
   }
 }
 
-void buzzerStart(uint8_t index, uint16_t frequency, uint16_t durationMs) {
-  if (index >= BUZZER_COUNT || frequency == 0 || durationMs == 0) {
-    if (index < BUZZER_COUNT) {
-      buzzerStop(index);
+void buzzer_stop_all(void) {
+  uint8_t i;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    for (i = 0; i < BUZZER_COUNT; ++i) {
+      buzzers[i].active = 0;
+      buzzers[i].output_high = 0;
+      buzzers[i].remaining_ticks = 0;
+      buzzer_pin_low(i);
     }
+  }
+}
+
+void buzzer_start(uint8_t index, uint16_t frequency, uint16_t duration_ms) {
+  if (index >= BUZZER_COUNT) {
+    return;
+  }
+  if (frequency == 0U || duration_ms == 0U) {
+    buzzer_stop(index);
     return;
   }
 
-  BuzzerState &buzzer = buzzers[index];
-  buzzer.active = true;
-  buzzer.outputHigh = false;
-  buzzer.halfPeriodUs = static_cast<uint16_t>(500000UL / frequency);
-  buzzer.startedAtMs = millis();
-  buzzer.durationMs = durationMs;
-  buzzer.nextToggleUs = micros();
-  digitalWrite(BUZZER_PINS[index], LOW);
-}
-
-// Atualiza cada buzzer em separado e mantém a fase para reduzir desvios de frequência.
-void buzzerUpdate() {
-  const uint32_t nowMs = millis();
-  const uint32_t nowUs = micros();
-
-  for (uint8_t i = 0; i < BUZZER_COUNT; ++i) {
-    BuzzerState &buzzer = buzzers[i];
-    if (!buzzer.active) {
-      continue;
-    }
-
-    if (static_cast<uint32_t>(nowMs - buzzer.startedAtMs) >= buzzer.durationMs) {
-      buzzerStop(i);
-      continue;
-    }
-
-    if (static_cast<int32_t>(nowUs - buzzer.nextToggleUs) >= 0) {
-      const uint32_t elapsedPeriods =
-          static_cast<uint32_t>(nowUs - buzzer.nextToggleUs) / buzzer.halfPeriodUs + 1;
-      if ((elapsedPeriods & 1) != 0) {
-        buzzer.outputHigh = !buzzer.outputHigh;
-        digitalWrite(BUZZER_PINS[i], buzzer.outputHigh ? HIGH : LOW);
-      }
-      buzzer.nextToggleUs += elapsedPeriods * buzzer.halfPeriodUs;
-    }
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    buzzers[index].active = 0;
+    buzzers[index].output_high = 0;
+    buzzers[index].half_period_us = (uint16_t)(500000UL / frequency);
+    buzzers[index].phase_us = 0;
+    buzzers[index].remaining_ticks =
+        (uint32_t)duration_ms * (1000U / TIMER_TICK_US);
+    buzzer_pin_low(index);
+    buzzers[index].active = 1;
   }
 }
 
-uint16_t midiNoteFrequency(uint8_t note) {
+uint32_t buzzer_millis(void) {
+  uint32_t now;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    now = elapsed_ms;
+  }
+  return now;
+}
+
+uint16_t midi_note_frequency(uint8_t note) {
   if (note < MIDI_MIN_NOTE || note > MIDI_MAX_NOTE) {
     return 0;
   }
   return NOTE_FREQUENCIES[note - MIDI_MIN_NOTE];
+}
+
+ISR(TIMER2_COMPA_vect) {
+  uint8_t i;
+
+  if (++ticks_in_ms >= TIMER_TICKS_PER_MS) {
+    ticks_in_ms = 0;
+    ++elapsed_ms;
+  }
+
+  for (i = 0; i < BUZZER_COUNT; ++i) {
+    if (!buzzers[i].active) {
+      continue;
+    }
+
+    if (buzzers[i].remaining_ticks <= 1U) {
+      buzzers[i].remaining_ticks = 0;
+      buzzers[i].active = 0;
+      buzzers[i].output_high = 0;
+      buzzer_pin_low(i);
+      continue;
+    }
+    --buzzers[i].remaining_ticks;
+
+    buzzers[i].phase_us += TIMER_TICK_US;
+    if (buzzers[i].phase_us >= buzzers[i].half_period_us) {
+      buzzers[i].phase_us -= buzzers[i].half_period_us;
+      buzzers[i].output_high = !buzzers[i].output_high;
+      if (buzzers[i].output_high) {
+        PORTB |= BUZZER_BITS[i];
+      } else {
+        buzzer_pin_low(i);
+      }
+    }
+  }
 }

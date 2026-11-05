@@ -5,15 +5,13 @@ Suporta músicas pré-guardadas na EEPROM (selecionadas por botão), controlo em
 tempo real a partir do PC via UART e reconfiguração das músicas guardadas
 através de uma trama do tipo MIDI.
 
-> Campos marcados com `TODO` devem ser preenchidos com os valores finais do projeto.
-
 ## Índice
 
 - [Objetivo](#objetivo)
 - [Modos de funcionamento](#modos-de-funcionamento)
 - [Hardware](#hardware)
 - [Comunicação UART](#comunicação-uart)
-- [Formato da trama de reconfiguração](#formato-da-trama-de-reconfiguração)
+- [Formato da trama de gravação](#formato-da-trama-de-gravação)
 - [Implementação](#implementação)
 - [Fluxograma](#fluxograma)
 - [Limites atuais](#limites-atuais)
@@ -106,12 +104,13 @@ No modo 3, enviar a trama binária produzida por `src/midi_para_trama.py`:
 
 ## Implementação
 
-- `src/main.cpp` – firmware Arduino para os três modos, botões, LEDs, UART,
-  reprodução das vozes e coordenação dos módulos.
+- Firmware em C (`.c`): `main`, `buttons`, `buzzer`, `presets`,
+  `serial_modes` e `uart`. A inicialização e o ciclo principal implementam
+  `setup()` e `loop()` em C para o core Arduino.
 - `include/` – cabeçalhos com configuração e interfaces dos módulos.
-- `src/buttons.cpp`, `src/buzzer.cpp`, `src/presets.cpp` e
-  `src/serial_modes.cpp` – implementação modular dos botões, geração de som,
-  reprodução/EEPROM e comunicação série.
+- O acesso a GPIO, temporizador, UART e EEPROM é feito diretamente pelos
+  registos AVR e pela biblioteca avr-libc; o código não depende da API C++
+  `Serial`/`EEPROM`.
 - `src/midi_para_trama.py` – conversor de ficheiros MIDI para a trama binária
   recebida no modo 3.
 
@@ -154,7 +153,7 @@ flowchart TD
 
 - 2 músicas guardadas na EEPROM (presets 1 e 2).
 - Máximo de 80 eventos por música (240 bytes por preset, mais metadados).
-- Gama de frequências: 262 Hz a 1976 Hz (proposta).
+- Gama de frequências live: 100 Hz a 1976 Hz.
 - A EEPROM do ATmega328P tem 1 KB, o que limita o espaço total para presets.
 - A EEPROM tem um número limitado de ciclos de escrita; evitar regravações
   desnecessárias.

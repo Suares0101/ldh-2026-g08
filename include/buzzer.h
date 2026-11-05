@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-void buzzerInit();
-void buzzerStart(uint8_t index, uint16_t frequency, uint16_t durationMs);
-void buzzerStop(uint8_t index);
-void buzzerStopAll();
-void buzzerUpdate();
-uint16_t midiNoteFrequency(uint8_t note);
+void buzzer_init(void);
+void buzzer_start(uint8_t index, uint16_t frequency, uint16_t duration_ms);
+void buzzer_stop(uint8_t index);
+void buzzer_stop_all(void);
+uint16_t midi_note_frequency(uint8_t note);
+uint32_t buzzer_millis(void);
 
 #endif

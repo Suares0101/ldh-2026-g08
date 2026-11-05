@@ -1,31 +1,32 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <avr/io.h>
 #include <stdint.h>
 
-static const uint8_t BUZZER_COUNT = 3;
-static const uint8_t BUZZER_PINS[BUZZER_COUNT] = {8, 9, 10};
-static const uint8_t BUTTON_PINS[BUZZER_COUNT] = {2, 3, 4};
-static const uint8_t LED_PINS[BUZZER_COUNT] = {5, 6, 7};
+#define BUZZER_COUNT 3U
+#define MAX_EVENTS 80U
+#define EVENT_SIZE 3U
+#define EEPROM_MAGIC 0x5AU
+#define SLOT_SIZE (2U + MAX_EVENTS * EVENT_SIZE)
+#define MIDI_HEADER 0xAAU
+#define MAX_FRAME_DATA (MAX_EVENTS * EVENT_SIZE)
 
-enum SystemMode : uint8_t {
+#define MIDI_MIN_NOTE 60U
+#define MIDI_MAX_NOTE 95U
+#define MIDI_MIN_DURATION 5U
+#define MIDI_MAX_DURATION 200U
+#define LIVE_MIN_FREQUENCY 100U
+#define LIVE_MAX_FREQUENCY 1976U
+
+typedef enum {
   MODE_PRESETS = 1,
   MODE_LIVE = 2,
   MODE_RECORD = 3
-};
+} SystemMode;
 
-static const uint8_t MAX_EVENTS = 80;
-static const uint8_t EVENT_SIZE = 3;
-static const uint8_t EEPROM_MAGIC = 0x5A;
-static const uint16_t SLOT_SIZE = 2 + MAX_EVENTS * EVENT_SIZE;
-static const uint8_t MIDI_HEADER = 0xAA;
-static const uint16_t MAX_FRAME_DATA = MAX_EVENTS * EVENT_SIZE;
-
-static const uint8_t MIDI_MIN_NOTE = 60;
-static const uint8_t MIDI_MAX_NOTE = 95;
-static const uint8_t MIDI_MIN_DURATION = 5;
-static const uint8_t MIDI_MAX_DURATION = 200;
-static const uint16_t LIVE_MIN_FREQUENCY = 100;
-static const uint16_t LIVE_MAX_FREQUENCY = 1976;
+static const uint8_t BUZZER_BITS[BUZZER_COUNT] = {_BV(0), _BV(1), _BV(2)};
+static const uint8_t BUTTON_BITS[BUZZER_COUNT] = {_BV(2), _BV(3), _BV(4)};
+static const uint8_t LED_BITS[BUZZER_COUNT] = {_BV(5), _BV(6), _BV(7)};
 
 #endif

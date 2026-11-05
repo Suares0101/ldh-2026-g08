@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 
-void presetStopPlayback();
-void presetPlay(uint8_t slot);
-void presetUpdate();
+void preset_stop_playback(void);
+void preset_play(uint8_t slot);
+void preset_update(void);
 
 #endif
