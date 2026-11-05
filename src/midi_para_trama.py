@@ -8,7 +8,7 @@ sistema musical com 3 buzzers e envia-a pela porta série.
 
 Formato da trama (todos os valores em bytes):
     0xAA | SLOT | LEN | { CANAL NOTA DURACAO } x N | CHK
-    SLOT     1..2     música (posição da EEPROM) onde o Arduino a guarda
+    SLOT     1..3     preset onde o Arduino guarda a música
     LEN      3 x N    (máximo 240)
     CANAL    1..3     buzzer que toca o evento
     NOTA     60..95   número de nota MIDI (0 = pausa)
@@ -18,8 +18,6 @@ Formato da trama (todos os valores em bytes):
 Exemplos:
     python midi_para_trama.py musica.mid --slot 1 --hex          # mostra a trama em hexadecimal (Tinkercad)
     python midi_para_trama.py musica.mid --slot 2 --porta COM3   # envia os bytes ao Arduino real
-    python midi_para_trama.py musica.mid --listar                # mostra os canais do ficheiro
-    python midi_para_trama.py musica.mid --canais 1,2 --hex      # usa só os canais 1 e 2
     python midi_para_trama.py --exemplo --hex                    # trama de teste sem ficheiro MIDI
 
 Nota: ao abrir a porta série o Arduino Uno reinicia e volta ao estado inicial, por isso o script
@@ -27,6 +25,7 @@ pede-te para carregares em B3 (modo 3) DEPOIS de abrir a porta e antes de enviar
 Monitor Série do Arduino IDE antes de usar --porta (a porta só pode estar aberta num programa).
 
 Instalação:  pip install mido pyserial
+Áudio→MIDI:  pip install librosa soundfile numpy
 """
 import argparse
 import sys
@@ -42,8 +41,8 @@ HDR = 0xAA
 # ----------------------------------------------------------------------------
 def montar_trama(slot, eventos):
     """eventos: lista de (canal 1..3, nota 0 ou 60..95, duracao 5..200)."""
-    if not 1 <= slot <= 2:
-        raise ValueError("o slot tem de ser 1 ou 2")
+    if not 1 <= slot <= 3:
+        raise ValueError("o slot tem de ser 1, 2 ou 3")
     if not 1 <= len(eventos) <= MAX_EV:
         raise ValueError(f"a música tem de ter entre 1 e {MAX_EV} eventos")
     corpo = [HDR, slot, 3 * len(eventos)]
@@ -63,11 +62,9 @@ def para_hex(trama):
 # ----------------------------------------------------------------------------
 # Leitura do MIDI
 # ----------------------------------------------------------------------------
-def ler_notas(caminho, canais=None):
-    """Devolve a lista de notas (inicio_s, fim_s, nota), ordenada por início.
-    canais: canais MIDI a usar (1 a 16). Se for None usa todos menos o canal 10 (percussão)."""
+def ler_notas(caminho):
+    """Devolve a lista de notas (inicio_s, fim_s, nota) de todo o ficheiro, ordenada por início."""
     import mido
-    usar = (lambda c: (c + 1) in canais) if canais else (lambda c: c != 9)
     mid = mido.MidiFile(caminho)
     t = 0.0
     abertas = {}                         # (canal, nota) -> lista de inícios
@@ -75,8 +72,7 @@ def ler_notas(caminho, canais=None):
     for msg in mid:                      # mido já aplica as mudanças de tempo (tempo map)
         t += msg.time
         if msg.type == "note_on" and msg.velocity > 0:
-            if usar(msg.channel):
-                abertas.setdefault((msg.channel, msg.note), []).append(t)
+            abertas.setdefault((msg.channel, msg.note), []).append(t)
         elif msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0):
             lst = abertas.get((msg.channel, msg.note))
             if lst:
@@ -86,34 +82,6 @@ def ler_notas(caminho, canais=None):
             notas.append((ini, t, nota))
     notas.sort(key=lambda n: (n[0], -n[2]))      # ao mesmo tempo: as mais agudas primeiro (a melodia fica)
     return notas
-
-
-NOMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-
-
-def nome_nota(n):
-    return f"{NOMES[n % 12]}{n // 12 - 1}"
-
-
-def listar(caminho):
-    """Mostra os canais do ficheiro MIDI para escolheres quais usar com --canais."""
-    import mido
-    t = 0.0
-    info = {}
-    for msg in mido.MidiFile(caminho):
-        t += msg.time
-        if msg.type == "note_on" and msg.velocity > 0:
-            d = info.setdefault(msg.channel, {"n": 0, "min": 127, "max": 0, "ini": t, "fim": t})
-            d["n"] += 1; d["min"] = min(d["min"], msg.note); d["max"] = max(d["max"], msg.note); d["fim"] = t
-    if not info:
-        print("O ficheiro não tem notas.")
-        return
-    print("Canal  Notas  Gama           Início-fim (s)")
-    for c in sorted(info):
-        d = info[c]
-        obs = "  (percussão: ignorado por omissão)" if c == 9 else ""
-        print(f"{c + 1:>5}  {d['n']:>5}  {nome_nota(d['min']):>3} a {nome_nota(d['max']):<4}     {d['ini']:5.1f}-{d['fim']:.1f}{obs}")
-    print("Usa --canais para escolher, por exemplo: --canais 1,2,3")
 
 
 def encaixar_na_gama(nota):
@@ -172,8 +140,8 @@ def _partir(canal, nota, segundos):
     return out
 
 
-def midi_para_eventos(caminho, canais=None):
-    notas = ler_notas(caminho, canais)
+def midi_para_eventos(caminho):
+    notas = ler_notas(caminho)
     if not notas:
         raise ValueError("o ficheiro MIDI não tem notas")
     vozes, descartadas = repartir_em_3_vozes(notas)
@@ -206,6 +174,83 @@ def exemplo():
 
 
 # ----------------------------------------------------------------------------
+# Conversão de áudio (MP3/WAV/OGG) para MIDI
+# ----------------------------------------------------------------------------
+def mp3_para_midi(entrada, saida, progresso=None):
+    """Transcreve um ficheiro de áudio para MIDI usando deteção de pitch.
+    Requer: pip install librosa soundfile mido numpy
+    Devolve o número de notas escritas."""
+    import numpy as np
+    import librosa
+    import mido
+
+    if progresso:
+        progresso("A carregar áudio…")
+    y, sr = librosa.load(entrada, sr=22050, mono=True)
+
+    if progresso:
+        progresso("A detetar pitch (pYIN)…")
+    f0, voiced_flag, _ = librosa.pyin(
+        y, fmin=librosa.note_to_hz("C3"), fmax=librosa.note_to_hz("B6"),
+        sr=sr, frame_length=2048
+    )
+    tempos = librosa.times_like(f0, sr=sr)
+
+    if progresso:
+        progresso("A agrupar notas…")
+    # Agrupa frames consecutivos com a mesma nota (arredondada a semitom MIDI)
+    notas = []              # (inicio_s, fim_s, midi_note)
+    atual_nota = None
+    inicio = None
+    for t, f, v in zip(tempos, f0, voiced_flag):
+        if v and not np.isnan(f):
+            midi_n = int(round(librosa.hz_to_midi(f)))
+            if atual_nota is None:
+                atual_nota, inicio = midi_n, t
+            elif midi_n != atual_nota:
+                notas.append((inicio, t, atual_nota))
+                atual_nota, inicio = midi_n, t
+        else:
+            if atual_nota is not None:
+                notas.append((inicio, t, atual_nota))
+                atual_nota, inicio = None, None
+    if atual_nota is not None:
+        notas.append((inicio, tempos[-1] if len(tempos) else 0.0, atual_nota))
+
+    # Filtra notas demasiado curtas (< 80 ms) — ruído
+    notas = [n for n in notas if n[1] - n[0] >= 0.08]
+    if not notas:
+        raise ValueError("Não foram detetadas notas no áudio.")
+
+    if progresso:
+        progresso(f"A escrever {len(notas)} notas no MIDI…")
+    mid = mido.MidiFile()
+    track = mido.MidiTrack()
+    mid.tracks.append(track)
+    track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(120)))
+
+    # Converte segundos para ticks (480 ticks por batida, 120 bpm)
+    ticks_por_seg = mid.ticks_per_beat * 2   # 120 bpm => 2 batidas/seg
+    eventos = []
+    for ini, fim, nota in notas:
+        eventos.append((int(ini * ticks_por_seg), "on", nota))
+        eventos.append((int(fim * ticks_por_seg), "off", nota))
+    eventos.sort(key=lambda e: (e[0], e[1] == "on"))  # off antes de on no mesmo instante
+
+    ultimo = 0
+    for tick, tipo, nota in eventos:
+        delta = tick - ultimo
+        ultimo = tick
+        if tipo == "on":
+            track.append(mido.Message("note_on", note=nota, velocity=100, time=delta))
+        else:
+            track.append(mido.Message("note_off", note=nota, velocity=0, time=delta))
+
+    mid.save(saida)
+    return len(notas)
+
+
+# ----------------------------------------------------------------------------
 # Envio pela porta série
 # ----------------------------------------------------------------------------
 def ler_resposta(ser, tempo=4.0):
@@ -219,14 +264,17 @@ def ler_resposta(ser, tempo=4.0):
     return ""
 
 
-def enviar(trama, porta, baud=9600, pausa=True):
+def enviar(trama, porta, baud=9600, pausa=True, antes_de_enviar=None):
     import time
     import serial          # pyserial
     with serial.serial_for_url(porta, baudrate=baud, timeout=0.5) as s:
         time.sleep(2)      # o Arduino reinicia quando a porta abre
         s.reset_input_buffer()
         if pausa:
-            input("A placa reiniciou ao abrir a porta. Carrega em B3 (acende o LED 3) e prime Enter para enviar... ")
+            if antes_de_enviar is not None:
+                antes_de_enviar()
+            else:
+                input("A placa reiniciou ao abrir a porta. Carrega em B3 (acende o LED 3) e prime Enter para enviar... ")
             s.reset_input_buffer()
         s.write(trama)
         s.flush()
@@ -235,47 +283,284 @@ def enviar(trama, porta, baud=9600, pausa=True):
     return resposta.startswith("OK")
 
 
+
+# ----------------------------------------------------------------------------
+# Interface gráfica
+# ----------------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description="Converte um ficheiro MIDI numa trama para o modo 3.")
-    ap.add_argument("midi", nargs="?", help="ficheiro .mid")
-    ap.add_argument("--slot", type=int, default=1, choices=[1, 2], help="música onde guardar (1 ou 2)")
-    ap.add_argument("--hex", action="store_true", help="mostra a trama em hexadecimal (para colar no Tinkercad)")
-    ap.add_argument("--porta", help="porta série (ex.: COM3 ou /dev/ttyUSB0) para enviar os bytes")
-    ap.add_argument("--baud", type=int, default=9600)
-    ap.add_argument("--sem-pausa", action="store_true", help="não pede para carregar em B3 (só se a placa não reiniciar ao abrir a porta)")
-    ap.add_argument("--saida", help="guarda a trama binária num ficheiro")
-    ap.add_argument("--listar", action="store_true", help="mostra os canais do ficheiro MIDI e sai")
-    ap.add_argument("--canais", help="canais MIDI a usar (1 a 16), separados por vírgulas. Por omissão usa todos menos o 10 (percussão)")
-    ap.add_argument("--exemplo", action="store_true", help="usa uma música de teste em vez de um ficheiro MIDI")
-    a = ap.parse_args()
+    import tkinter as tk
+    from tkinter import ttk, filedialog, messagebox
+    from pathlib import Path
 
-    canais = None
-    if a.canais:
-        try:
-            canais = {int(x) for x in a.canais.split(",")}
-            assert all(1 <= c <= 16 for c in canais)
-        except Exception:
-            ap.error("--canais deve ser uma lista de números de 1 a 16, por exemplo 1,2,3")
-    if a.listar:
-        if not a.midi:
-            ap.error("indica o ficheiro .mid para listar")
-        listar(a.midi)
-        return
-    if a.exemplo:
-        eventos = exemplo()
-    elif a.midi:
-        eventos = midi_para_eventos(a.midi, canais)
-    else:
-        ap.error("indica um ficheiro .mid ou usa --exemplo")
+    class Aplicacao(tk.Tk):
+        def __init__(self):
+            super().__init__()
+            self.title("MIDI para Trama — Grupo 8")
+            self.geometry("760x650")
+            self.minsize(680, 570)
+            self.configure(bg="#f2f4f7")
+            self.midi_path = tk.StringVar()
+            self.slot = tk.IntVar(value=1)
+            self.porta = tk.StringVar()
+            self.baud = tk.StringVar(value="9600")
+            self.sem_pausa = tk.BooleanVar(value=False)
+            self.trama = None
+            self.eventos = None
+            self._estilo()
+            self._interface()
+            self._listar_portas()
 
-    trama = montar_trama(a.slot, eventos)
-    print(f"{len(eventos)} eventos, trama com {len(trama)} bytes, preset {a.slot}.", file=sys.stderr)
-    if a.hex or not (a.porta or a.saida):
-        print(para_hex(trama))
-    if a.saida:
-        open(a.saida, "wb").write(trama)
-    if a.porta:
-        sys.exit(0 if enviar(trama, a.porta, a.baud, not a.sem_pausa) else 1)
+        def _estilo(self):
+            style = ttk.Style(self)
+            try:
+                style.theme_use("clam")
+            except tk.TclError:
+                pass
+            style.configure("TFrame", background="#f2f4f7")
+            style.configure("Card.TFrame", background="white")
+            style.configure("TLabel", background="#f2f4f7", foreground="#202938", font=("Segoe UI", 10))
+            style.configure("Title.TLabel", font=("Segoe UI", 19, "bold"), foreground="#152238")
+            style.configure("Sub.TLabel", font=("Segoe UI", 9), foreground="#637083")
+            style.configure("TButton", font=("Segoe UI", 10), padding=(10, 7))
+            style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"), padding=(12, 8))
+            style.configure("TLabelframe", background="white")
+            style.configure("TLabelframe.Label", background="white", foreground="#26364d", font=("Segoe UI", 10, "bold"))
+            style.configure("TEntry", padding=6)
+            style.configure("TCombobox", padding=5)
+
+        def _interface(self):
+            root = ttk.Frame(self, padding=18)
+            root.pack(fill="both", expand=True)
+            ttk.Label(root, text="MIDI para Trama", style="Title.TLabel").pack(anchor="w")
+            ttk.Label(root, text="Converte músicas MIDI e envia os dados para o Arduino.", style="Sub.TLabel").pack(anchor="w", pady=(2, 14))
+
+            ficheiro = ttk.LabelFrame(root, text="1. Música de entrada", padding=12)
+            ficheiro.pack(fill="x", pady=(0, 10))
+            linha = ttk.Frame(ficheiro)
+            linha.pack(fill="x")
+            ttk.Entry(linha, textvariable=self.midi_path).pack(side="left", fill="x", expand=True)
+            ttk.Button(linha, text="Procurar MIDI…", command=self._escolher_midi).pack(side="left", padx=(8, 0))
+            ttk.Button(linha, text="Usar música de teste", command=self._usar_exemplo).pack(side="left", padx=(8, 0))
+            ttk.Button(linha, text="Converter MP3 → MIDI…", command=self._converter_mp3).pack(side="left", padx=(8, 0))
+
+            config = ttk.LabelFrame(root, text="2. Configuração", padding=12)
+            config.pack(fill="x", pady=(0, 10))
+            linha = ttk.Frame(config)
+            linha.pack(fill="x")
+            ttk.Label(linha, text="Preset / Slot:").pack(side="left")
+            for n in (1, 2, 3):
+                ttk.Radiobutton(linha, text=str(n), variable=self.slot, value=n).pack(side="left", padx=5)
+            ttk.Button(linha, text="Converter música", style="Accent.TButton", command=self._converter).pack(side="right")
+
+            envio = ttk.LabelFrame(root, text="3. Envio para Arduino (opcional)", padding=12)
+            envio.pack(fill="x", pady=(0, 10))
+            linha = ttk.Frame(envio)
+            linha.pack(fill="x")
+            ttk.Label(linha, text="Porta série:").pack(side="left")
+            self.combo_portas = ttk.Combobox(linha, textvariable=self.porta, width=18)
+            self.combo_portas.pack(side="left", padx=(7, 12))
+            ttk.Button(linha, text="Atualizar portas", command=self._listar_portas).pack(side="left")
+            ttk.Label(linha, text="Baud:").pack(side="left", padx=(18, 5))
+            ttk.Entry(linha, textvariable=self.baud, width=10).pack(side="left")
+            ttk.Checkbutton(envio, text="Não esperar pelo botão B3 (usar apenas se a placa não reiniciar)", variable=self.sem_pausa).pack(anchor="w", pady=(8, 0))
+            ttk.Button(envio, text="Enviar trama para Arduino", style="Accent.TButton", command=self._enviar).pack(anchor="e", pady=(8, 0))
+
+            resultado = ttk.LabelFrame(root, text="4. Resultado da conversão", padding=10)
+            resultado.pack(fill="both", expand=True, pady=(0, 10))
+            self.info = ttk.Label(resultado, text="Ainda não foi gerada nenhuma trama.", style="Sub.TLabel")
+            self.info.pack(anchor="w", pady=(0, 7))
+            self.texto = tk.Text(resultado, height=8, wrap="word", font=("Consolas", 10), bg="#111827", fg="#d7e3f4", insertbackground="white", relief="flat", padx=10, pady=10)
+            self.texto.pack(fill="both", expand=True)
+            self.texto.insert("1.0", "A trama hexadecimal aparecerá aqui…")
+            self.texto.configure(state="disabled")
+            botoes = ttk.Frame(resultado)
+            botoes.pack(fill="x", pady=(8, 0))
+            ttk.Button(botoes, text="Copiar hexadecimal", command=self._copiar).pack(side="left")
+            ttk.Button(botoes, text="Guardar trama .bin…", command=self._guardar).pack(side="left", padx=8)
+
+            self.estado = tk.StringVar(value="Pronto.")
+            ttk.Label(root, textvariable=self.estado, style="Sub.TLabel").pack(anchor="w")
+
+        def _escolher_midi(self):
+            caminho = filedialog.askopenfilename(
+                title="Escolher ficheiro MIDI",
+                filetypes=[("Ficheiros MIDI", "*.mid *.midi"), ("Todos os ficheiros", "*.*")]
+            )
+            if caminho:
+                self.midi_path.set(caminho)
+                self.eventos = None
+                self.trama = None
+                self.estado.set("Ficheiro selecionado. Carrega em «Converter música».")
+
+        def _usar_exemplo(self):
+            self.midi_path.set("")
+            self.eventos = exemplo()
+            self._criar_trama()
+            self.estado.set("Música de teste carregada e convertida.")
+
+        def _converter_mp3(self):
+            """Pede ficheiro de áudio e destino MIDI, e converte numa thread."""
+            entrada = filedialog.askopenfilename(
+                title="Escolher ficheiro de áudio para converter",
+                filetypes=[("Áudio", "*.mp3 *.wav *.ogg *.flac *.m4a"), ("Todos os ficheiros", "*.*")]
+            )
+            if not entrada:
+                return
+            saida = filedialog.asksaveasfilename(
+                title="Guardar MIDI resultante",
+                defaultextension=".mid",
+                filetypes=[("Ficheiros MIDI", "*.mid"), ("Todos os ficheiros", "*.*")],
+                initialfile=Path(entrada).stem + ".mid"
+            )
+            if not saida:
+                return
+
+            self.estado.set("A converter áudio para MIDI… (pode demorar alguns minutos)")
+            self.config(cursor="watch")
+            self.update_idletasks()
+
+            def tarefa():
+                try:
+                    n = mp3_para_midi(entrada, saida, progresso=lambda m: self.estado.set(m))
+                    self.after(0, lambda: self._fim_mp3(saida, n))
+                except Exception as exc:
+                    self.after(0, lambda: self._erro_mp3(exc))
+
+            import threading
+            threading.Thread(target=tarefa, daemon=True).start()
+
+        def _fim_mp3(self, caminho_midi, n_notas):
+            self.config(cursor="")
+            self.midi_path.set(caminho_midi)
+            self.eventos = None
+            self.trama = None
+            self.estado.set(f"Áudio convertido: {n_notas} notas. Carrega em «Converter música».")
+            messagebox.showinfo(
+                "Conversão MP3 → MIDI concluída",
+                f"Foram escritas {n_notas} notas em:\n{caminho_midi}\n\n"
+                "Agora carrega em «Converter música» para gerar a trama."
+            )
+
+        def _erro_mp3(self, exc):
+            self.config(cursor="")
+            self.estado.set("A conversão MP3 → MIDI falhou.")
+            messagebox.showerror(
+                "Erro na conversão de áudio",
+                f"{exc}\n\nGarante que tens instalado:\n    pip install librosa soundfile mido numpy\n"
+                "e que o ficheiro de áudio não está corrompido."
+            )
+
+        def _converter(self):
+            try:
+                caminho = self.midi_path.get().strip()
+                if not caminho:
+                    raise ValueError("Escolhe um ficheiro MIDI ou usa a música de teste.")
+                if not Path(caminho).is_file():
+                    raise ValueError("O ficheiro selecionado já não existe.")
+                self.eventos = midi_para_eventos(caminho)
+                self._criar_trama()
+                self.estado.set("Conversão concluída com sucesso.")
+            except Exception as exc:
+                messagebox.showerror("Erro na conversão", str(exc))
+                self.estado.set("A conversão não foi concluída.")
+
+        def _criar_trama(self):
+            self.trama = montar_trama(self.slot.get(), self.eventos)
+            hexa = para_hex(self.trama)
+            self.info.configure(text=f"{len(self.eventos)} eventos  |  {len(self.trama)} bytes  |  Preset {self.slot.get()}")
+            self.texto.configure(state="normal")
+            self.texto.delete("1.0", "end")
+            self.texto.insert("1.0", hexa)
+            self.texto.configure(state="disabled")
+
+        def _garantir_trama(self):
+            if self.trama is None:
+                messagebox.showwarning("Sem trama", "Primeiro converte um MIDI ou carrega a música de teste.")
+                return False
+            # O slot pode ter sido alterado depois da conversão.
+            try:
+                self._criar_trama()
+            except Exception as exc:
+                messagebox.showerror("Erro", str(exc))
+                return False
+            return True
+
+        def _copiar(self):
+            if not self._garantir_trama():
+                return
+            self.clipboard_clear()
+            self.clipboard_append(para_hex(self.trama))
+            self.estado.set("Hexadecimal copiado para a área de transferência.")
+
+        def _guardar(self):
+            if not self._garantir_trama():
+                return
+            caminho = filedialog.asksaveasfilename(
+                title="Guardar trama binária",
+                defaultextension=".bin",
+                filetypes=[("Ficheiro binário", "*.bin"), ("Todos os ficheiros", "*.*")]
+            )
+            if caminho:
+                try:
+                    Path(caminho).write_bytes(self.trama)
+                    self.estado.set(f"Trama guardada: {caminho}")
+                    messagebox.showinfo("Guardado", "A trama binária foi guardada com sucesso.")
+                except Exception as exc:
+                    messagebox.showerror("Erro ao guardar", str(exc))
+
+        def _listar_portas(self):
+            try:
+                from serial.tools import list_ports
+                portas = [p.device for p in list_ports.comports()]
+                self.combo_portas["values"] = portas
+                if portas and not self.porta.get():
+                    self.porta.set(portas[0])
+                self.estado.set(f"{len(portas)} porta(s) série encontrada(s)." if portas else "Nenhuma porta série encontrada.")
+            except ImportError:
+                self.combo_portas["values"] = []
+                self.estado.set("Instala pyserial para detetar portas série.")
+
+        def _enviar(self):
+            if not self._garantir_trama():
+                return
+            porta = self.porta.get().strip()
+            if not porta:
+                messagebox.showwarning("Porta em falta", "Seleciona a porta série do Arduino.")
+                return
+            try:
+                baud = int(self.baud.get())
+                if baud <= 0:
+                    raise ValueError("A velocidade baud tem de ser positiva.")
+            except ValueError:
+                messagebox.showerror("Baud inválido", "Introduz uma velocidade baud válida, por exemplo 9600.")
+                return
+
+            if not messagebox.askyesno(
+                "Confirmar envio",
+                f"Vou abrir {porta} a {baud} baud.\n\nO Arduino vai reiniciar ao abrir a porta. "
+                "Fecha o Monitor Série do Arduino IDE.\n\nContinuar?"
+            ):
+                return
+            try:
+                ok = enviar(
+                    self.trama, porta, baud, not self.sem_pausa.get(),
+                    antes_de_enviar=lambda: messagebox.showinfo(
+                        "Preparar Arduino",
+                        "A placa reiniciou ao abrir a porta.\n\nCarrega em B3 (deve acender o LED 3) e prime OK para enviar a trama."
+                    )
+                )
+                if ok:
+                    messagebox.showinfo("Envio concluído", "O Arduino confirmou a receção da trama.")
+                    self.estado.set("Envio confirmado pelo Arduino.")
+                else:
+                    messagebox.showwarning("Sem confirmação", "A trama foi enviada, mas o Arduino não respondeu com OK. Confirma que está no modo 3.")
+                    self.estado.set("Envio sem confirmação do Arduino.")
+            except Exception as exc:
+                messagebox.showerror("Erro no envio", str(exc))
+                self.estado.set("O envio falhou.")
+
+    app = Aplicacao()
+    app.mainloop()
 
 
 if __name__ == "__main__":

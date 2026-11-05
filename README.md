@@ -3,7 +3,8 @@
 Firmware em C para o ATmega328P do Arduino Uno (16 MHz), com três modos:
 reprodução de dois presets da EEPROM, reprodução de notas enviadas por UART e
 gravação de novos presets a partir de ficheiros MIDI. Os três buzzers podem
-reproduzir vozes independentes em simultâneo.
+ser ativados em simultâneo; os canais 1 e 2 permitem selecionar a frequência,
+e o canal 3 tem tom fixo.
  
 ## Índice
 
@@ -32,7 +33,7 @@ a reprodução em curso e descarta comandos ou tramas incompletos.
 
 | Modo | Descrição |
 | --- | --- |
-| 1 – Presets | B1 toca o preset 1 e B2 toca o preset 2, guardados na EEPROM. Cada buzzer reproduz a sua própria voz em simultâneo. |
+| 1 – Presets | B1 toca o preset 1 e B2 toca o preset 2, guardados na EEPROM. Os buzzers nos pinos 8 e 9 reproduzem as frequências dos eventos; o buzzer ativo no pino 10 produz o seu tom fixo. |
 | 2 – Live | O PC envia um ou mais comandos `B<buzzer>_<Hz>_<ms>` por UART. Cada comando toca no buzzer indicado sem guardar a nota; duração `0` pára esse buzzer. |
 | 3 – Gravação | O PC envia a trama binária gerada pelo conversor MIDI. A placa valida os eventos e o checksum e grava o slot 1 ou 2 na EEPROM. |
 
@@ -42,9 +43,9 @@ Pinos usados no teste atual (placa Arduino com a mesma ligação do Tinkercad):
 
 | Função | Pino Uno | Pino AVR |
 | --- | --- | --- |
-| Buzzer 1 | D8 | PB0 |
-| Buzzer 2 | D9 | PB1 |
-| Buzzer 3 | D10 | PB2 |
+| Buzzer 1 — LOUDITY LD-BZEN-1201 | D8 | PB0 |
+| Buzzer 2 — LOUDITY LD-BZEN-1201 | D9 | PB1 |
+| Buzzer 3 — TMB12A05 | D10 | PB2 |
 | Botão 1 (música 1 no modo preset) | D2 | PD2 |
 | Botão 2 (música 2 no modo preset) | D3 | PD3 |
 | Botão 3 (muda de modo) | D4 | PD4 |
@@ -57,8 +58,17 @@ Pinos usados no teste atual (placa Arduino com a mesma ligação do Tinkercad):
 - Alimentação: USB (5 V).
 - Botões ligados a GND quando premidos; as entradas usam resistências pull-up
   internas.
-- Os buzzers são passivos. Timer2 gera interrupções periódicas para atualizar
-  individualmente os três sinais nos pinos D8–D10.
+- Buzzers 1 e 2: LOUDITY LD-BZEN-1201, transdutores eletromagnéticos sem
+  oscilador, com ressonância nominal de cerca de 2,4 kHz e tensão nominal de
+  1,5 V, ligados aos pinos 8 e 9. O Timer2 gera a frequência pedida nestes
+  canais.
+- Buzzer 3: TMB12A05 ativo, alimentado a 5 V, com oscilador interno, ligado ao
+  pino 10. É ligado apenas durante a duração pedida; a frequência é fixa e
+  não reproduz as alturas das notas.
+- Usar estágios de transístor/driver. O TMB12A05 pode consumir 30 mA, acima do
+  recomendado para uma saída GPIO, e os LD-BZEN-1201 não devem receber os 5 V
+  do pino diretamente: dimensionar o driver/alimentação para os valores dos
+  respetivos datasheets.
 - Os três LEDs indicam exclusivamente o modo ativo.
 - Placa final: PCB própria de 2 camadas, ≤ 80 × 60 mm, desenhada em Altium 365,
   com ponte USB-UART (por exemplo CH340) e conector ISP.
@@ -80,17 +90,22 @@ Formato do comando:
 B<buzzer>_<frequência em Hz>_<duração em ms>
 ```
 
-Exemplo (dois comandos enviados na mesma linha):
+Exemplo de teste perto da frequência de ressonância dos buzzers 1 e 2:
 
 ```text
-B2_200_500 B3_100_200
+B1_2400_500 B2_2400_500
 ```
 
-- Buzzer: `1` a `3`; frequência: 100 Hz a 1976 Hz; duração: 50 ms a 2000 ms.
+- Buzzer: `1` a `3`; frequência aceite: 100 Hz a 2400 Hz; duração: 50 ms a
+  2000 ms.
+- Nos buzzers 1 e 2, o firmware aplica a frequência indicada. No buzzer 3, a
+  frequência é ignorada: o TMB12A05 gera internamente o seu tom fixo; por
+  exemplo, `B3_0_500` liga-o durante 500 ms.
+- Frequências como 100 Hz ou 200 Hz estão muito abaixo da ressonância dos
+  buzzers 1 e 2 e podem soar fracas ou ásperas; 2,4 kHz serve para verificar
+  primeiro o timbre na frequência nominal.
 - Separar comandos com espaços, tabulações ou Enter (LF/CRLF). Cada comando é
   processado assim que chega o separador, sem esperar pelo fim da linha.
-- Exemplo: `B2_200_500 B3_100_200` toca nos buzzers 2 e 3 com durações
-  independentes.
 - Uma duração de `0` pára o buzzer indicado e ignora a frequência. Exemplo:
   `B2_100_0`.
 - Cada comando válido recebe `OK`; uma pausa recebe `OK: pausa`; comandos
@@ -175,11 +190,18 @@ flowchart TD
 - 2 músicas guardadas na EEPROM (presets 1 e 2); cada slot ocupa 242 bytes
   (2 bytes de metadados e até 240 bytes de eventos), totalizando 484 bytes.
 - Máximo de 80 eventos por música.
-- Gama de frequências live: 100 Hz a 1976 Hz.
+- Gama de frequências live aceite: 100 Hz a 2400 Hz. Nos buzzers 1 e 2, o
+  volume/resposta depende da frequência; a ressonância nominal é cerca de
+  2,4 kHz, pelo que 100–200 Hz está muito abaixo do ponto de maior resposta.
+- O buzzer ativo do canal 3 só produz o seu tom fixo; nos presets, as notas
+  desse canal tornam-se sons de duração variável, não alturas variáveis. Para
+  melodias com três alturas variáveis, substituir o TMB12A05 por um transdutor
+  passivo compatível com o circuito.
 - Timer2 é usado pelo firmware para os três buzzers e deixa de estar disponível
   para outras funções que dependam desse temporizador.
-- A frequência/timbre deve ser confirmada com os buzzers e o circuito finais;
-  os sinais são ondas quadradas geradas por software numa interrupção de 20 μs.
+- A frequência/timbre deve ser confirmada com os buzzers e os drivers finais;
+  os canais 2 e 3 recebem ondas quadradas geradas por software numa interrupção
+  de 20 μs.
 - A EEPROM do ATmega328P tem 1 KB; os dois slots usam 484 bytes.
 - A EEPROM tem um número limitado de ciclos de escrita; evitar regravações
   desnecessárias.

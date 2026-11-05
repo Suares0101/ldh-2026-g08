@@ -79,7 +79,7 @@ static uint8_t parse_live_command(const char *command, uint8_t length,
       !parse_unsigned(command + second_separator + 1U,
                       length - second_separator - 1U, duration) ||
       buzzer_number < 1U || buzzer_number > BUZZER_COUNT ||
-      (*duration != 0U &&
+      (buzzer_number != ACTIVE_BUZZER_INDEX + 1U && *duration != 0U &&
        (*frequency < LIVE_MIN_FREQUENCY || *frequency > LIVE_MAX_FREQUENCY)) ||
       (*duration != 0U && (*duration < 50U || *duration > 2000U))) {
     return 0;
@@ -102,8 +102,13 @@ static void process_live_command(void) {
     buzzer_stop(channel - 1U);
     uart_write_string_P(PSTR("OK: pausa\r\n"));
   } else {
-    buzzer_start(channel - 1U, frequency, duration);
-    uart_write_string_P(PSTR("OK\r\n"));
+    if (channel - 1U == ACTIVE_BUZZER_INDEX) {
+      buzzer_start(channel - 1U, BUZZER_RESONANT_FREQUENCY, duration);
+      uart_write_string_P(PSTR("OK: buzzer ativo, frequencia fixa\r\n"));
+    } else {
+      buzzer_start(channel - 1U, frequency, duration);
+      uart_write_string_P(PSTR("OK\r\n"));
+    }
   }
 
   live_command_length = 0;
