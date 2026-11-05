@@ -33,9 +33,9 @@ LED2 = modo 2, LED3 = modo 3). Todos os modos usam os 3 buzzers.
 
 | Modo | Descrição |
 | --- | --- |
-| 1 – Preset | B1 toca a música 1 e B2 toca a música 2, ambas guardadas na EEPROM, nos 3 buzzers. |
-| 2 – Live | O PC envia buzzer, frequência e duração por UART e os buzzers tocam em tempo real. |
-| 3 – Reconfiguração | O PC envia uma trama do tipo MIDI; o sistema valida-a e grava-a na EEPROM (2 posições de preset). Os novos presets ficam guardados. |
+| 1 – Presets | B1 toca a música 1 e B2 toca a música 2, guardadas na EEPROM. Cada buzzer reproduz a sua voz em simultâneo. |
+| 2 – Live | O PC envia `B<buzzer>_<Hz>_<ms>` seguido de Enter; o buzzer indicado toca sem gravar a nota. |
+| 3 – Gravação | O PC envia uma trama binária do conversor MIDI; a placa valida-a e grava o preset 1 ou 2 na EEPROM. |
 
 ## Hardware
 
@@ -75,40 +75,45 @@ Formato do comando:
 B<buzzer>_<frequência em Hz>_<duração em ms>
 ```
 
-Exemplo (buzzer 1, 300 Hz, 250 ms):
+Exemplo (dois comandos enviados na mesma linha):
 
 ```text
-B1_300_250
+B2_200_500 B3_100_200
 ```
 
-- Gama de frequências: 262 Hz a 1976 Hz (C4 a B6).
+- Gama de frequências: 100 Hz a 1976 Hz.
 - Gama de durações: 50 ms a 2000 ms.
-- `TODO` confirmar o separador/terminador de comandos quando se enviam vários
-  comandos seguidos.
-- Cada comando recebe uma resposta de estado (aceite ou inválido).
+- Separar comandos com espaços e/ou Enter; cada um começa a tocar assim que é recebido.
+- Duração `0` pára o buzzer indicado, ignorando a frequência: `B2_100_0`.
+- Cada comando recebe `OK`, `OK: pausa` ou uma mensagem `ERRO`.
 
-## Formato da trama de reconfiguração
+## Formato da trama de gravação
 
-Trama do tipo MIDI enviada pelo PC no modo 3 (`TODO` definir campos finais):
+No modo 3, enviar a trama binária produzida por `src/midi_para_trama.py`:
 
 | Campo | Tamanho | Descrição |
 | --- | --- | --- |
-| Cabeçalho | `TODO` | Marca de início da trama |
-| Nº do preset | `TODO` | Posição da música na EEPROM (1 ou 2) |
-| Nº de notas | `TODO` | Quantidade de eventos |
-| Eventos | `TODO` | Nota, duração e buzzer de cada evento |
-| Checksum | `TODO` | Validação da integridade |
+| Cabeçalho | 1 byte | `0xAA` |
+| Slot | 1 byte | Música a substituir: `1` ou `2` |
+| Comprimento | 1 byte | Número de bytes dos eventos: 3 a 240, múltiplo de 3 |
+| Eventos | 3 bytes cada | Canal/buzzer (1–3), nota MIDI (0 ou 60–95), duração em unidades de 10 ms (5–200) |
+| Checksum | 1 byte | XOR de todos os bytes anteriores |
 
-- A trama só é gravada na EEPROM depois de validada.
-- Em caso de erro, o preset anterior é mantido e é enviada uma mensagem de erro.
+- Cada música aceita até 80 eventos. Nota `0` representa uma pausa nesse buzzer.
+- A EEPROM só é atualizada depois de validar o slot, os eventos e o checksum.
+- A placa responde `OK: musica ... gravada` ou `ERRO: ...`.
+- Exemplo: `python src/midi_para_trama.py musica.mid --slot 1 --porta COM3`.
 
 ## Implementação
 
-- `src/1,1.cpp` – sketch Arduino de teste (3 botões, 3 LEDs, 3 buzzers), usado
-  para validar a ligação e os modos.
-- Módulos previstos para o firmware final em C (avr-gcc), ainda por criar:
-  `uart`, `main` (máquina de estados dos 3 modos), `buzzer`, `eeprom` e `midi`
-  (validação e descodificação da trama).
+- `src/main.cpp` – firmware Arduino para os três modos, botões, LEDs, UART,
+  reprodução das vozes e coordenação dos módulos.
+- `include/` – cabeçalhos com configuração e interfaces dos módulos.
+- `src/buttons.cpp`, `src/buzzer.cpp`, `src/presets.cpp` e
+  `src/serial_modes.cpp` – implementação modular dos botões, geração de som,
+  reprodução/EEPROM e comunicação série.
+- `src/midi_para_trama.py` – conversor de ficheiros MIDI para a trama binária
+  recebida no modo 3.
 
 ## Fluxograma
 
@@ -148,7 +153,7 @@ flowchart TD
 ## Limites atuais
 
 - 2 músicas guardadas na EEPROM (presets 1 e 2).
-- `TODO` número máximo de notas por música (proposta: ≥ 64 eventos).
+- Máximo de 80 eventos por música (240 bytes por preset, mais metadados).
 - Gama de frequências: 262 Hz a 1976 Hz (proposta).
 - A EEPROM do ATmega328P tem 1 KB, o que limita o espaço total para presets.
 - A EEPROM tem um número limitado de ciclos de escrita; evitar regravações
@@ -165,10 +170,8 @@ flowchart TD
 
 ## Compilar e carregar
 
-Toolchain prevista: `avr-gcc` com `Makefile`, `avrdude` e programador ISP.
-
-`TODO` adicionar o `Makefile` e os comandos de compilação (`-Wall`) e de
-carregamento com `avrdude`.
+Toolchain: PlatformIO, perfil Arduino Uno (`platformio.ini`). Compilar com
+`pio run` e carregar com `pio run --target upload`.
 
 ## Prazos
 
