@@ -5,8 +5,6 @@
 // MODO 3: ler ficheiro MIDI e tocar sequencialmente
 // =======================================================
 
-#include <Arduino.h>
-
 // Definições dos pinos dos buzzers
 #define BUZZER1_PIN 8
 #define BUZZER2_PIN 9
