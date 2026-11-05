@@ -8,7 +8,8 @@
 typedef enum {
   MIDI_WAIT_HEADER,
   MIDI_WAIT_SLOT,
-  MIDI_WAIT_LENGTH,
+  MIDI_WAIT_LENGTH_HIGH,
+  MIDI_WAIT_LENGTH_LOW,
   MIDI_WAIT_EVENTS,
   MIDI_WAIT_CHECKSUM
 } MidiReceiveState;
@@ -16,8 +17,8 @@ typedef enum {
 static uint8_t midi_data[MAX_FRAME_DATA];
 static MidiReceiveState midi_state = MIDI_WAIT_HEADER;
 static uint8_t midi_slot;
-static uint8_t midi_length;
-static uint8_t midi_data_index;
+static uint16_t midi_length;
+static uint16_t midi_data_index;
 static uint8_t midi_checksum;
 static uint8_t midi_frame_valid = 1;
 static uint32_t midi_last_byte_at_ms;
@@ -133,13 +134,25 @@ static void receive_live_byte(char value) {
 static void write_preset_to_eeprom(void) {
   const uint16_t address = (uint16_t)(midi_slot - 1U) * SLOT_SIZE;
   uint16_t i;
+  uint16_t event_index;
 
   eeprom_update_byte((uint8_t *)(uintptr_t)address, 0);
-  for (i = 0; i < midi_length; ++i) {
-    eeprom_update_byte((uint8_t *)(uintptr_t)(address + 2U + i), midi_data[i]);
+  for (i = 0, event_index = 0; i < midi_length; i += EVENT_SIZE, ++event_index) {
+    const uint8_t channel = midi_data[i];
+    const uint8_t note = midi_data[i + 1U];
+    const uint8_t note_code =
+        note == 0U ? 0U : (uint8_t)(note - MIDI_MIN_NOTE + 1U);
+    const uint8_t packed_note_channel =
+        (uint8_t)((channel - 1U) * 37U + note_code);
+    const uint16_t event_address =
+        address + 2U + event_index * EEPROM_EVENT_SIZE;
+
+    eeprom_update_byte((uint8_t *)(uintptr_t)event_address, packed_note_channel);
+    eeprom_update_byte((uint8_t *)(uintptr_t)(event_address + 1U),
+                       midi_data[i + 2U]);
   }
   eeprom_update_byte((uint8_t *)(uintptr_t)(address + 1U),
-                     midi_length / EVENT_SIZE);
+                     (uint8_t)(midi_length / EVENT_SIZE));
   eeprom_update_byte((uint8_t *)(uintptr_t)address, EEPROM_MAGIC);
 
   uart_write_string_P(PSTR("OK: musica "));
@@ -173,17 +186,23 @@ static void receive_midi_byte(uint8_t value) {
     case MIDI_WAIT_SLOT:
       midi_slot = value;
       midi_checksum ^= value;
-      if (value < 1U || value > 2U) {
+      if (value < 1U || value > MAX_SLOTS) {
         midi_frame_valid = 0;
       }
-      midi_state = MIDI_WAIT_LENGTH;
+      midi_state = MIDI_WAIT_LENGTH_HIGH;
       break;
 
-    case MIDI_WAIT_LENGTH:
-      midi_length = value;
+    case MIDI_WAIT_LENGTH_HIGH:
+      midi_length = (uint16_t)value << 8;
       midi_checksum ^= value;
-      if (value < EVENT_SIZE || value > MAX_FRAME_DATA ||
-          value % EVENT_SIZE != 0U) {
+      midi_state = MIDI_WAIT_LENGTH_LOW;
+      break;
+
+    case MIDI_WAIT_LENGTH_LOW:
+      midi_length |= value;
+      midi_checksum ^= value;
+      if (midi_length < EVENT_SIZE || midi_length > MAX_FRAME_DATA ||
+          midi_length % EVENT_SIZE != 0U) {
         uart_write_string_P(PSTR("ERRO: comprimento de trama invalido\r\n"));
         reset_midi_receiver();
       } else {

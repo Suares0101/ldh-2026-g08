@@ -1,10 +1,11 @@
 # Sistema Musical com 3 Buzzers
 
 Firmware em C para o ATmega328P do Arduino Uno (16 MHz), com três modos:
-reprodução de dois presets da EEPROM, reprodução de notas enviadas por UART e
-gravação de novos presets a partir de ficheiros MIDI. Os três buzzers podem
-ser ativados em simultâneo; os canais 1 e 2 permitem selecionar a frequência,
-e o canal 3 tem tom fixo.
+reprodução de presets da EEPROM, reprodução de notas enviadas por UART e
+gravação de novos presets a partir de ficheiros MIDI. São armazenáveis três
+presets de até 120 eventos; os botões selecionam os presets 1 e 2. Os três
+buzzers podem ser ativados em simultâneo; os canais 1 e 2 permitem selecionar
+a frequência, e o canal 3 tem tom fixo.
  
 ## Índice
 
@@ -35,7 +36,7 @@ a reprodução em curso e descarta comandos ou tramas incompletos.
 | --- | --- |
 | 1 – Presets | B1 toca o preset 1 e B2 toca o preset 2, guardados na EEPROM. Os buzzers nos pinos 8 e 9 reproduzem as frequências dos eventos; o buzzer ativo no pino 10 produz o seu tom fixo. |
 | 2 – Live | O PC envia um ou mais comandos `B<buzzer>_<Hz>_<ms>` por UART. Cada comando toca no buzzer indicado sem guardar a nota; duração `0` pára esse buzzer. |
-| 3 – Gravação | O PC envia a trama binária gerada pelo conversor MIDI. A placa valida os eventos e o checksum e grava o slot 1 ou 2 na EEPROM. |
+| 3 – Gravação | O PC envia a trama binária gerada pelo conversor MIDI. A placa valida os eventos e o checksum e grava o slot 1, 2 ou 3 na EEPROM. |
 
 ## Hardware
 
@@ -114,27 +115,38 @@ B1_2400_500 B2_2400_500
 
 ## Formato da trama de gravação
 
-No modo 3, enviar os bytes binários produzidos por `src/midi_para_trama.py`.
+No modo 3, enviar os bytes binários produzidos por `src/midi_para_trama.pyw`.
 Os campos são transmitidos por ordem, um byte de cada vez:
 
 | Campo | Tamanho | Descrição |
 | --- | --- | --- |
 | Cabeçalho | 1 byte | `0xAA` |
-| Slot | 1 byte | Música a substituir: `1` ou `2` |
-| Comprimento | 1 byte | Número de bytes dos eventos: 3 a 240, múltiplo de 3 |
+| Slot | 1 byte | Música a substituir: `1`, `2` ou `3` |
+| Comprimento | 2 bytes | Número de bytes dos eventos, big-endian: 3 a 360, múltiplo de 3 |
 | Eventos | 3 bytes cada | Buzzer/canal (1–3), nota MIDI (0 ou 60–95), duração em unidades de 10 ms (5–200) |
 | Checksum | 1 byte | XOR de todos os bytes anteriores |
 
-- Cada preset aceita de 1 a 80 eventos. A nota MIDI `0` é uma pausa no buzzer
+- Cada preset aceita de 1 a 120 eventos. A nota MIDI `0` é uma pausa no buzzer
   desse evento; as outras notas aceites são 60–95 (C4–B6).
+- A aplicação permite escolher os slots 1, 2 e 3. Os botões atuais selecionam
+  apenas os presets 1 e 2; não existe botão dedicado para reproduzir o preset 3.
 - A EEPROM só é atualizada depois de validar slot, comprimento, eventos e
   checksum. O slot fica inválido durante a escrita e só é marcado válido no
   fim.
+- A alteração do formato interno da EEPROM invalida os presets gravados pelo
+  firmware anterior; depois de atualizar o firmware, voltar a gravar cada
+  música que se pretende manter.
 - A placa responde `OK: musica <slot> gravada (<eventos> eventos)` ou `ERRO`.
-- Exemplo no Windows: `python src\midi_para_trama.py musica.mid --slot 1 --porta COM3`.
 - O conversor necessita de `mido` e `pyserial` (`pip install mido pyserial`).
-  Ao abrir a porta série, o Uno reinicia; carregar em B3 até selecionar o modo
-  3 quando o script pedir. Fechar o Monitor Série antes de enviar.
+  Para abrir a aplicação gráfica sem uma janela CMD, executar
+  `src\midi_para_trama.pyw` (duplo clique no Windows). Executá-lo diretamente
+  com `python` continua a abrir uma consola, pois esse comando usa o
+  interpretador de consola.
+- Ao abrir a porta série, o Uno reinicia; carregar em B3 até selecionar o modo
+  3 quando a aplicação pedir. Fechar o Monitor Série antes de enviar. Para
+  aceitar tramas de até 120 eventos, carregar no Uno o firmware atualizado
+  (`pio run -e uno --target upload`); o conversor usa comprimento de dois bytes
+  (`LEN_H`, `LEN_L`), incompatível com o firmware anterior.
 
 ## Implementação
 
@@ -147,7 +159,7 @@ Os campos são transmitidos por ordem, um byte de cada vez:
   framework Arduino fornece o arranque da placa.
 - Timer2 usa CTC, prescaler 8 e comparação a cada 20 μs para atualizar os
   sinais dos três buzzers e fornecer a base de tempo do firmware.
-- `src/midi_para_trama.py` – conversor de ficheiros MIDI para a trama binária
+- `src/midi_para_trama.pyw` – conversor de ficheiros MIDI para a trama binária
   recebida no modo 3.
 
 ## Fluxograma
@@ -179,7 +191,7 @@ flowchart TD
 
   M3 --> RECV[Receber trama MIDI por UART]
   RECV --> VALID{Trama válida?}
-  VALID -- Sim --> WRITE[Gravar numa das 2 posições da EEPROM]
+  VALID -- Sim --> WRITE[Gravar numa das 3 posições da EEPROM]
   VALID -- Não --> ERR_MIDI[Enviar erro]
   WRITE --> M3
   ERR_MIDI --> M3
@@ -187,9 +199,11 @@ flowchart TD
 
 ## Limites atuais
 
-- 2 músicas guardadas na EEPROM (presets 1 e 2); cada slot ocupa 242 bytes
-  (2 bytes de metadados e até 240 bytes de eventos), totalizando 484 bytes.
-- Máximo de 80 eventos por música.
+- 3 músicas guardadas na EEPROM (presets 1, 2 e 3); cada slot ocupa 242 bytes:
+  2 bytes de metadados e até 240 bytes de eventos compactados, totalizando
+  726 dos 1024 bytes disponíveis.
+- Máximo de 120 eventos por música. A trama UART transporta os eventos em
+  3 bytes cada; o firmware compacta-os para 2 bytes por evento na EEPROM.
 - Gama de frequências live aceite: 100 Hz a 2400 Hz. Nos buzzers 1 e 2, o
   volume/resposta depende da frequência; a ressonância nominal é cerca de
   2,4 kHz, pelo que 100–200 Hz está muito abaixo do ponto de maior resposta.
@@ -202,7 +216,7 @@ flowchart TD
 - A frequência/timbre deve ser confirmada com os buzzers e os drivers finais;
   os canais 2 e 3 recebem ondas quadradas geradas por software numa interrupção
   de 20 μs.
-- A EEPROM do ATmega328P tem 1 KB; os dois slots usam 484 bytes.
+- A EEPROM do ATmega328P tem 1 KB; os três slots usam 726 bytes.
 - A EEPROM tem um número limitado de ciclos de escrita; evitar regravações
   desnecessárias.
 

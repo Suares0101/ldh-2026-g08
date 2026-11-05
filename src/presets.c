@@ -25,7 +25,7 @@ static uint16_t slot_address(uint8_t slot) {
 static uint8_t preset_valid(uint8_t slot, uint8_t *count) {
   uint16_t address;
 
-  if (slot < 1U || slot > 2U) {
+  if (slot < 1U || slot > MAX_SLOTS) {
     return 0;
   }
   address = slot_address(slot);
@@ -39,15 +39,22 @@ static uint8_t preset_valid(uint8_t slot, uint8_t *count) {
 
 static uint8_t read_event(uint8_t index, uint8_t *channel, uint8_t *note,
                           uint8_t *duration) {
+  uint8_t packed_note_channel;
   uint16_t address;
 
   if (index >= event_count) {
     return 0;
   }
-  address = slot_address(playing_slot) + 2U + (uint16_t)index * EVENT_SIZE;
-  *channel = eeprom_read_byte((const uint8_t *)(uintptr_t)address);
-  *note = eeprom_read_byte((const uint8_t *)(uintptr_t)(address + 1U));
-  *duration = eeprom_read_byte((const uint8_t *)(uintptr_t)(address + 2U));
+  address = slot_address(playing_slot) + 2U +
+            (uint16_t)index * EEPROM_EVENT_SIZE;
+  packed_note_channel =
+      eeprom_read_byte((const uint8_t *)(uintptr_t)address);
+  *channel = (uint8_t)(packed_note_channel / 37U) + 1U;
+  packed_note_channel %= 37U;
+  *note = packed_note_channel == 0U
+              ? 0U
+              : (uint8_t)(packed_note_channel + MIDI_MIN_NOTE - 1U);
+  *duration = eeprom_read_byte((const uint8_t *)(uintptr_t)(address + 1U));
 
   return *channel >= 1U && *channel <= BUZZER_COUNT &&
          (*note == 0U || (*note >= MIDI_MIN_NOTE && *note <= MIDI_MAX_NOTE)) &&

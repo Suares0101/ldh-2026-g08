@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-midi_para_trama.py - Grupo 8, LDH 2026/2027
+midi_para_trama.pyw - Grupo 8, LDH 2026/2027
 
 Converte um ficheiro MIDI (.mid) numa trama para o modo 3 (reconfiguração) do
 sistema musical com 3 buzzers e envia-a pela porta série.
 
 Formato da trama (todos os valores em bytes):
-    0xAA | SLOT | LEN | { CANAL NOTA DURACAO } x N | CHK
+    0xAA | SLOT | LEN_H | LEN_L | { CANAL NOTA DURACAO } x N | CHK
     SLOT     1..3     preset onde o Arduino guarda a música
-    LEN      3 x N    (máximo 240)
+    LEN_H/L  3 x N    comprimento dos eventos, big-endian (máximo 360)
     CANAL    1..3     buzzer que toca o evento
     NOTA     60..95   número de nota MIDI (0 = pausa)
     DURACAO  5..200   em unidades de 10 ms
     CHK      XOR de todos os bytes anteriores
 
-Exemplos:
-    python midi_para_trama.py musica.mid --slot 1 --hex          # mostra a trama em hexadecimal (Tinkercad)
-    python midi_para_trama.py musica.mid --slot 2 --porta COM3   # envia os bytes ao Arduino real
-    python midi_para_trama.py --exemplo --hex                    # trama de teste sem ficheiro MIDI
+No Windows, iniciar a interface gráfica sem uma janela de consola com:
+    midi_para_trama.pyw
 
 Nota: ao abrir a porta série o Arduino Uno reinicia e volta ao estado inicial, por isso o script
 pede-te para carregares em B3 (modo 3) DEPOIS de abrir a porta e antes de enviar. Fecha o
@@ -27,10 +25,9 @@ Monitor Série do Arduino IDE antes de usar --porta (a porta só pode estar aber
 Instalação:  pip install mido pyserial
 Áudio→MIDI:  pip install librosa soundfile numpy
 """
-import argparse
 import sys
 
-MAX_EV = 80          # eventos por preset (igual ao firmware)
+MAX_EV = 120         # eventos por preset (igual ao firmware)
 NOTA_MIN, NOTA_MAX = 60, 95
 DUR_MIN, DUR_MAX = 5, 200      # unidades de 10 ms
 HDR = 0xAA
@@ -45,7 +42,8 @@ def montar_trama(slot, eventos):
         raise ValueError("o slot tem de ser 1, 2 ou 3")
     if not 1 <= len(eventos) <= MAX_EV:
         raise ValueError(f"a música tem de ter entre 1 e {MAX_EV} eventos")
-    corpo = [HDR, slot, 3 * len(eventos)]
+    comprimento = 3 * len(eventos)
+    corpo = [HDR, slot, comprimento >> 8, comprimento & 0xFF]
     for canal, nota, dur in eventos:
         assert 1 <= canal <= 3 and (nota == 0 or NOTA_MIN <= nota <= NOTA_MAX) and DUR_MIN <= dur <= DUR_MAX
         corpo += [canal, nota, dur]
@@ -279,8 +277,7 @@ def enviar(trama, porta, baud=9600, pausa=True, antes_de_enviar=None):
         s.write(trama)
         s.flush()
         resposta = ler_resposta(s)
-    print("Resposta do sistema:", resposta or "(sem resposta: a placa estava no modo 3?)")
-    return resposta.startswith("OK")
+    return resposta
 
 
 
@@ -542,18 +539,31 @@ def main():
             ):
                 return
             try:
-                ok = enviar(
+                resposta = enviar(
                     self.trama, porta, baud, not self.sem_pausa.get(),
                     antes_de_enviar=lambda: messagebox.showinfo(
                         "Preparar Arduino",
                         "A placa reiniciou ao abrir a porta.\n\nCarrega em B3 (deve acender o LED 3) e prime OK para enviar a trama."
                     )
                 )
-                if ok:
+                if resposta.startswith("OK"):
                     messagebox.showinfo("Envio concluído", "O Arduino confirmou a receção da trama.")
                     self.estado.set("Envio confirmado pelo Arduino.")
+                elif resposta:
+                    messagebox.showerror(
+                        "Arduino rejeitou a trama",
+                        f"Resposta recebida: {resposta}\n\n"
+                        "Confirma que o firmware atualizado está carregado e que a placa está no modo 3."
+                    )
+                    self.estado.set(f"Arduino respondeu: {resposta}")
                 else:
-                    messagebox.showwarning("Sem confirmação", "A trama foi enviada, mas o Arduino não respondeu com OK. Confirma que está no modo 3.")
+                    messagebox.showwarning(
+                        "Sem resposta do Arduino",
+                        "A trama foi enviada, mas não chegou resposta.\n\n"
+                        "Confirma a porta COM e os 9600 baud, seleciona o modo 3 "
+                        "depois de abrir a porta e verifica se carregaste o firmware "
+                        "atualizado (protocolo com LEN_H e LEN_L)."
+                    )
                     self.estado.set("Envio sem confirmação do Arduino.")
             except Exception as exc:
                 messagebox.showerror("Erro no envio", str(exc))

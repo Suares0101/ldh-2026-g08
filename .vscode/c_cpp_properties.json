@@ -8,20 +8,38 @@
         {
             "name": "PlatformIO",
             "includePath": [
+                "C:/Users/Luís/Desktop/ldh-2026-g08/include",
                 "C:/Users/Luís/Desktop/ldh-2026-g08/src",
+                "C:/.platformio/packages/framework-arduino-avr/cores/arduino",
+                "C:/.platformio/packages/framework-arduino-avr/variants/standard",
+                "C:/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                "C:/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                "C:/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                "C:/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                "C:/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
                 ""
             ],
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
+                    "C:/Users/Luís/Desktop/ldh-2026-g08/include",
                     "C:/Users/Luís/Desktop/ldh-2026-g08/src",
+                    "C:/.platformio/packages/framework-arduino-avr/cores/arduino",
+                    "C:/.platformio/packages/framework-arduino-avr/variants/standard",
+                    "C:/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                    "C:/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                    "C:/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                    "C:/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                    "C:/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
                     ""
                 ]
             },
             "defines": [
-                "F_CPU=16000000L",
                 "PLATFORMIO=60200",
                 "ARDUINO_AVR_UNO",
+                "F_CPU=16000000L",
+                "ARDUINO_ARCH_AVR",
+                "ARDUINO=10808",
                 "__AVR_ATmega328P__",
                 ""
             ],
