@@ -8,8 +8,10 @@
 #include "serial_modes.h"
 #include "uart.h"
 
+// Botões: B1/B2 tocam as músicas 1/2 (modo 1); B3 muda de modo. LED aceso = modo atual.
 static SystemMode current_mode = MODE_PRESETS;
 
+// Para tudo o que estava a tocar, limpa receções a meio e acende só o LED do novo modo.
 static void set_mode(SystemMode mode) {
   uint8_t i;
   current_mode = mode;
@@ -29,7 +31,8 @@ static void set_mode(SystemMode mode) {
   uart_write_string_P(PSTR("\r\n"));
 }
 
-void setup(void) {
+// LEDs (PD5-PD7) como saída; botões (PD2-PD4) como entrada com pull-up.
+static void init_system(void) {
   DDRD |= _BV(PD5) | _BV(PD6) | _BV(PD7);
   PORTD &= (uint8_t)~(_BV(PD5) | _BV(PD6) | _BV(PD7));
   DDRD &= (uint8_t)~(_BV(PD2) | _BV(PD3) | _BV(PD4));
@@ -40,10 +43,11 @@ void setup(void) {
   buttons_init();
   set_mode(MODE_PRESETS);
   uart_write_string_P(PSTR("Pronto: B3 muda de modo; modo 2 usa B1_300_250.\r\n"));
-  sei();
+  sei();  // o Timer2 (buzzers e relógio) só começa a contar a partir daqui
 }
 
-void loop(void) {
+// Sem bloqueios: cada modo só faz uma pequena tarefa por volta.
+static void update_system(void) {
   if (button_pressed(2U)) {
     const SystemMode next_mode =
         current_mode == MODE_RECORD ? MODE_PRESETS : (SystemMode)(current_mode + 1);
@@ -62,5 +66,12 @@ void loop(void) {
     serial_mode_live_update();
   } else {
     serial_mode_record_update();
+  }
+}
+
+int main(void) {
+  init_system();
+  for (;;) {
+    update_system();
   }
 }

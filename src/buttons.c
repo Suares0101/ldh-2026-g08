@@ -1,48 +1,50 @@
 #include <avr/io.h>
-#include "buttons.h"
-#include "buzzer.h"
-#include "config.h"
+#include <avr/pgmspace.h>
+#include "uart.h"
 
-typedef struct {
-  bool stable_high;
-  bool last_reading_high;
-  uint32_t changed_at_ms;
-} ButtonState;
+// USART0 a 9600 baud, 8N1, só com polling (sem interrupções).
+void uart_init(void) {
+  const uint16_t divisor = (uint16_t)(F_CPU / (16UL * 9600UL) - 1UL);
+  UCSR0A = 0;
+  UBRR0H = (uint8_t)(divisor >> 8);
+  UBRR0L = (uint8_t)divisor;
+  UCSR0B = _BV(RXEN0) | _BV(TXEN0);
+  UCSR0C = _BV(UCSZ01) | _BV(UCSZ00);
+}
 
-static ButtonState buttons[BUZZER_COUNT];
+// Não bloqueia: devolve false se ainda não chegou nenhum byte.
+bool uart_read(uint8_t *value) {
+  if ((UCSR0A & _BV(RXC0)) == 0U) {
+    return false;
+  }
+  *value = UDR0;
+  return true;
+}
 
-void buttons_init(void) {
-  uint8_t i;
-  const uint32_t now = buzzer_millis();
+// Bloqueia até o registo de envio estar livre.
+void uart_write(uint8_t value) {
+  while ((UCSR0A & _BV(UDRE0)) == 0U) {
+  }
+  UDR0 = value;
+}
 
-  for (i = 0; i < BUZZER_COUNT; ++i) {
-    const bool reading_high = (PIND & BUTTON_BITS[i]) != 0;
-    buttons[i].stable_high = reading_high;
-    buttons[i].last_reading_high = reading_high;
-    buttons[i].changed_at_ms = now;
+// Texto guardado na flash (PSTR) para poupar os 2 KB de RAM.
+void uart_write_string_P(const char *text) {
+  uint8_t value;
+  while ((value = pgm_read_byte(text++)) != '\0') {
+    uart_write(value);
   }
 }
 
-bool button_pressed(uint8_t index) {
-  bool reading_high;
-  uint32_t now;
-
-  if (index >= BUZZER_COUNT) {
-    return false;
+// Escreve o número em decimal sem usar printf (poupa flash).
+void uart_write_u16(uint16_t value) {
+  char digits[5];
+  uint8_t length = 0;
+  do {
+    digits[length++] = (char)('0' + value % 10U);
+    value /= 10U;
+  } while (value > 0U);
+  while (length > 0U) {
+    uart_write((uint8_t)digits[--length]);
   }
-
-  reading_high = (PIND & BUTTON_BITS[index]) != 0;
-  now = buzzer_millis();
-  if (reading_high != buttons[index].last_reading_high) {
-    buttons[index].last_reading_high = reading_high;
-    buttons[index].changed_at_ms = now;
-  }
-
-  if ((uint32_t)(now - buttons[index].changed_at_ms) < 30U ||
-      reading_high == buttons[index].stable_high) {
-    return false;
-  }
-
-  buttons[index].stable_high = reading_high;
-  return !reading_high;
 }

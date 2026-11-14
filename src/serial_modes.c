@@ -5,6 +5,8 @@
 #include "serial_modes.h"
 #include "uart.h"
 
+// Máquina de estados da trama do modo 3:
+// 0xAA | slot | comprimento (2 bytes) | eventos (canal, nota, duração) | checksum XOR.
 typedef enum {
   MIDI_WAIT_HEADER,
   MIDI_WAIT_SLOT,
@@ -27,6 +29,7 @@ static char live_command[32];
 static uint8_t live_command_length;
 static uint8_t live_command_overflow;
 
+// Converte texto só com dígitos num número; rejeita vazio, letras e valores > 65535.
 static uint8_t parse_unsigned(const char *text, uint8_t length, uint16_t *value) {
   uint8_t i;
   uint32_t parsed = 0;
@@ -47,6 +50,8 @@ static uint8_t parse_unsigned(const char *text, uint8_t length, uint16_t *value)
   return 1;
 }
 
+// Comando do modo 2: B<buzzer>_<frequência Hz>_<duração ms>, ex.: B1_300_250.
+// Duração 0 = pausa. Valida todos os limites antes de tocar.
 static uint8_t parse_live_command(const char *command, uint8_t length,
                                   uint8_t *channel, uint16_t *frequency,
                                   uint16_t *duration) {
@@ -90,6 +95,7 @@ static uint8_t parse_live_command(const char *command, uint8_t length,
   return 1;
 }
 
+// Executa o comando acumulado e responde OK/ERRO.
 static void process_live_command(void) {
   uint8_t channel;
   uint16_t frequency;
@@ -116,6 +122,7 @@ static void process_live_command(void) {
   live_command_overflow = 0;
 }
 
+// Junta caracteres até um espaço ou fim de linha; comando maior que o buffer é recusado.
 static void receive_live_byte(char value) {
   if (value == ' ' || value == '\t' || value == '\r' || value == '\n') {
     if (live_command_length > 0U || live_command_overflow) {
@@ -131,6 +138,8 @@ static void receive_live_byte(char value) {
   }
 }
 
+// O byte mágico é apagado antes e só volta no fim: se faltar a energia a meio,
+// o slot fica inválido em vez de tocar lixo. update_byte poupa ciclos de escrita.
 static void write_preset_to_eeprom(void) {
   const uint16_t address = (uint16_t)(midi_slot - 1U) * SLOT_SIZE;
   uint16_t i;
@@ -162,6 +171,7 @@ static void write_preset_to_eeprom(void) {
   uart_write_string_P(PSTR(" eventos)\r\n"));
 }
 
+// Volta a esperar um novo cabeçalho 0xAA.
 static void reset_midi_receiver(void) {
   midi_state = MIDI_WAIT_HEADER;
   midi_slot = 0;
@@ -171,6 +181,8 @@ static void reset_midi_receiver(void) {
   midi_frame_valid = 1;
 }
 
+// Processa um byte da trama. Os eventos são validados à medida que chegam,
+// mas só se grava na EEPROM se o checksum bater certo no fim.
 static void receive_midi_byte(uint8_t value) {
   midi_last_byte_at_ms = buzzer_millis();
 
@@ -240,12 +252,14 @@ static void receive_midi_byte(uint8_t value) {
   }
 }
 
+// Chamada ao mudar de modo: descarta qualquer comando ou trama a meio.
 void serial_modes_reset(void) {
   reset_midi_receiver();
   live_command_length = 0;
   live_command_overflow = 0;
 }
 
+// Modo 2: lê tudo o que chegou pela UART e trata como comandos de texto.
 void serial_mode_live_update(void) {
   uint8_t value;
   while (uart_read(&value)) {
@@ -253,6 +267,7 @@ void serial_mode_live_update(void) {
   }
 }
 
+// Modo 3: lê bytes da trama; se ficar parada mais de 2 s a meio, desiste.
 void serial_mode_record_update(void) {
   uint8_t value;
   if (midi_state != MIDI_WAIT_HEADER &&

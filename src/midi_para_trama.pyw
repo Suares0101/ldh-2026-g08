@@ -8,19 +8,18 @@ sistema musical com 3 buzzers e envia-a pela porta série.
 
 Formato da trama (todos os valores em bytes):
     0xAA | SLOT | LEN_H | LEN_L | { CANAL NOTA DURACAO } x N | CHK
-    SLOT     1..3     preset onde o Arduino guarda a música
+    SLOT     1..2     preset onde o Arduino guarda a música
     LEN_H/L  3 x N    comprimento dos eventos, big-endian (máximo 360)
     CANAL    1..3     buzzer que toca o evento
     NOTA     60..95   número de nota MIDI (0 = pausa)
     DURACAO  5..200   em unidades de 10 ms
     CHK      XOR de todos os bytes anteriores
 
-No Windows, iniciar a interface gráfica sem uma janela de consola com:
-    midi_para_trama.pyw
+Abre uma interface gráfica (no Windows, com duplo clique, sem janela de consola).
 
-Nota: ao abrir a porta série o Arduino Uno reinicia e volta ao estado inicial, por isso o script
-pede-te para carregares em B3 (modo 3) DEPOIS de abrir a porta e antes de enviar. Fecha o
-Monitor Série do Arduino IDE antes de usar --porta (a porta só pode estar aberta num programa).
+Nota: ao abrir a porta série o Arduino Uno reinicia e volta ao estado inicial, por isso a
+aplicação pede-te para carregares em B3 (modo 3) DEPOIS de abrir a porta e antes de enviar.
+Fecha o Monitor Série do Arduino IDE antes de enviar (a porta só pode estar aberta num programa).
 
 Instalação:  pip install mido pyserial
 Áudio→MIDI:  pip install librosa soundfile numpy
@@ -38,8 +37,8 @@ HDR = 0xAA
 # ----------------------------------------------------------------------------
 def montar_trama(slot, eventos):
     """eventos: lista de (canal 1..3, nota 0 ou 60..95, duracao 5..200)."""
-    if not 1 <= slot <= 3:
-        raise ValueError("o slot tem de ser 1, 2 ou 3")
+    if not 1 <= slot <= 2:
+        raise ValueError("o slot tem de ser 1 ou 2")
     if not 1 <= len(eventos) <= MAX_EV:
         raise ValueError(f"a música tem de ter entre 1 e {MAX_EV} eventos")
     comprimento = 3 * len(eventos)
@@ -167,8 +166,7 @@ def midi_para_eventos(caminho):
 
 def exemplo():
     """Acorde C maior (C5 E5 G5) durante 500 ms, depois outro acorde (D5 F5 A5)."""
-    ev = [(1, 72, 50), (2, 76, 50), (3, 79, 50), (1, 74, 50), (2, 77, 50), (3, 81, 50)]
-    return ev
+    return [(1, 72, 50), (2, 76, 50), (3, 79, 50), (1, 74, 50), (2, 77, 50), (3, 81, 50)]
 
 
 # ----------------------------------------------------------------------------
@@ -263,22 +261,20 @@ def ler_resposta(ser, tempo=4.0):
 
 
 def enviar(trama, porta, baud=9600, pausa=True, antes_de_enviar=None):
+    """Envia a trama e devolve a resposta OK/ERRO da placa (\"\" se não responder).
+    antes_de_enviar: função que pede ao utilizador para carregar em B3 depois do reinício."""
     import time
     import serial          # pyserial
     with serial.serial_for_url(porta, baudrate=baud, timeout=0.5) as s:
         time.sleep(2)      # o Arduino reinicia quando a porta abre
         s.reset_input_buffer()
         if pausa:
-            if antes_de_enviar is not None:
-                antes_de_enviar()
-            else:
-                input("A placa reiniciou ao abrir a porta. Carrega em B3 (acende o LED 3) e prime Enter para enviar... ")
+            antes_de_enviar()
             s.reset_input_buffer()
         s.write(trama)
         s.flush()
         resposta = ler_resposta(s)
     return resposta
-
 
 
 # ----------------------------------------------------------------------------
@@ -299,7 +295,6 @@ def main():
             self.midi_path = tk.StringVar()
             self.slot = tk.IntVar(value=1)
             self.porta = tk.StringVar()
-            self.baud = tk.StringVar(value="9600")
             self.sem_pausa = tk.BooleanVar(value=False)
             self.trama = None
             self.eventos = None
@@ -308,6 +303,7 @@ def main():
             self._listar_portas()
 
         def _estilo(self):
+            # Cores e tipos de letra da janela (só aspeto, não afeta a conversão).
             style = ttk.Style(self)
             try:
                 style.theme_use("clam")
@@ -326,6 +322,7 @@ def main():
             style.configure("TCombobox", padding=5)
 
         def _interface(self):
+            # Quatro blocos por ordem de uso: ficheiro, configuração, envio e resultado.
             root = ttk.Frame(self, padding=18)
             root.pack(fill="both", expand=True)
             ttk.Label(root, text="MIDI para Trama", style="Title.TLabel").pack(anchor="w")
@@ -345,7 +342,7 @@ def main():
             linha = ttk.Frame(config)
             linha.pack(fill="x")
             ttk.Label(linha, text="Preset / Slot:").pack(side="left")
-            for n in (1, 2, 3):
+            for n in (1, 2):
                 ttk.Radiobutton(linha, text=str(n), variable=self.slot, value=n).pack(side="left", padx=5)
             ttk.Button(linha, text="Converter música", style="Accent.TButton", command=self._converter).pack(side="right")
 
@@ -357,8 +354,6 @@ def main():
             self.combo_portas = ttk.Combobox(linha, textvariable=self.porta, width=18)
             self.combo_portas.pack(side="left", padx=(7, 12))
             ttk.Button(linha, text="Atualizar portas", command=self._listar_portas).pack(side="left")
-            ttk.Label(linha, text="Baud:").pack(side="left", padx=(18, 5))
-            ttk.Entry(linha, textvariable=self.baud, width=10).pack(side="left")
             ttk.Checkbutton(envio, text="Não esperar pelo botão B3 (usar apenas se a placa não reiniciar)", variable=self.sem_pausa).pack(anchor="w", pady=(8, 0))
             ttk.Button(envio, text="Enviar trama para Arduino", style="Accent.TButton", command=self._enviar).pack(anchor="e", pady=(8, 0))
 
@@ -370,10 +365,6 @@ def main():
             self.texto.pack(fill="both", expand=True)
             self.texto.insert("1.0", "A trama hexadecimal aparecerá aqui…")
             self.texto.configure(state="disabled")
-            botoes = ttk.Frame(resultado)
-            botoes.pack(fill="x", pady=(8, 0))
-            ttk.Button(botoes, text="Copiar hexadecimal", command=self._copiar).pack(side="left")
-            ttk.Button(botoes, text="Guardar trama .bin…", command=self._guardar).pack(side="left", padx=8)
 
             self.estado = tk.StringVar(value="Pronto.")
             ttk.Label(root, textvariable=self.estado, style="Sub.TLabel").pack(anchor="w")
@@ -462,6 +453,7 @@ def main():
                 self.estado.set("A conversão não foi concluída.")
 
         def _criar_trama(self):
+            # Monta a trama com o slot escolhido e mostra-a em hexadecimal.
             self.trama = montar_trama(self.slot.get(), self.eventos)
             hexa = para_hex(self.trama)
             self.info.configure(text=f"{len(self.eventos)} eventos  |  {len(self.trama)} bytes  |  Preset {self.slot.get()}")
@@ -482,30 +474,8 @@ def main():
                 return False
             return True
 
-        def _copiar(self):
-            if not self._garantir_trama():
-                return
-            self.clipboard_clear()
-            self.clipboard_append(para_hex(self.trama))
-            self.estado.set("Hexadecimal copiado para a área de transferência.")
-
-        def _guardar(self):
-            if not self._garantir_trama():
-                return
-            caminho = filedialog.asksaveasfilename(
-                title="Guardar trama binária",
-                defaultextension=".bin",
-                filetypes=[("Ficheiro binário", "*.bin"), ("Todos os ficheiros", "*.*")]
-            )
-            if caminho:
-                try:
-                    Path(caminho).write_bytes(self.trama)
-                    self.estado.set(f"Trama guardada: {caminho}")
-                    messagebox.showinfo("Guardado", "A trama binária foi guardada com sucesso.")
-                except Exception as exc:
-                    messagebox.showerror("Erro ao guardar", str(exc))
-
         def _listar_portas(self):
+            # Preenche a lista de portas COM; sem pyserial só avisa.
             try:
                 from serial.tools import list_ports
                 portas = [p.device for p in list_ports.comports()]
@@ -518,29 +488,22 @@ def main():
                 self.estado.set("Instala pyserial para detetar portas série.")
 
         def _enviar(self):
+            # Valida a porta, envia e explica o resultado (OK, ERRO ou sem resposta).
             if not self._garantir_trama():
                 return
             porta = self.porta.get().strip()
             if not porta:
                 messagebox.showwarning("Porta em falta", "Seleciona a porta série do Arduino.")
                 return
-            try:
-                baud = int(self.baud.get())
-                if baud <= 0:
-                    raise ValueError("A velocidade baud tem de ser positiva.")
-            except ValueError:
-                messagebox.showerror("Baud inválido", "Introduz uma velocidade baud válida, por exemplo 9600.")
-                return
-
             if not messagebox.askyesno(
                 "Confirmar envio",
-                f"Vou abrir {porta} a {baud} baud.\n\nO Arduino vai reiniciar ao abrir a porta. "
+                f"Vou abrir {porta} a 9600 baud.\n\nO Arduino vai reiniciar ao abrir a porta. "
                 "Fecha o Monitor Série do Arduino IDE.\n\nContinuar?"
             ):
                 return
             try:
                 resposta = enviar(
-                    self.trama, porta, baud, not self.sem_pausa.get(),
+                    self.trama, porta, pausa=not self.sem_pausa.get(),
                     antes_de_enviar=lambda: messagebox.showinfo(
                         "Preparar Arduino",
                         "A placa reiniciou ao abrir a porta.\n\nCarrega em B3 (deve acender o LED 3) e prime OK para enviar a trama."

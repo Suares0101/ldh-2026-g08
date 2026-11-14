@@ -7,6 +7,7 @@
 #define TIMER_TICK_US 20U
 #define TIMER_TICKS_PER_MS (1000U / TIMER_TICK_US)
 
+// Estado de cada buzzer; é partilhado com a interrupção do Timer2, por isso é volatile.
 typedef struct {
   volatile uint8_t active;
   volatile uint8_t output_high;
@@ -19,6 +20,7 @@ static volatile BuzzerState buzzers[BUZZER_COUNT];
 static volatile uint32_t elapsed_ms;
 static volatile uint8_t ticks_in_ms;
 
+// Frequências das notas MIDI 60 (dó central) a 95, em Hz.
 static const uint16_t NOTE_FREQUENCIES[MIDI_MAX_NOTE - MIDI_MIN_NOTE + 1U] = {
   262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494,
   523, 554, 587, 622, 659, 698, 740, 784, 831, 880, 932, 988,
@@ -51,6 +53,7 @@ void buzzer_init(void) {
   TIMSK2 = _BV(OCIE2A);
 }
 
+// Cala o buzzer e põe o pino a zero.
 void buzzer_stop(uint8_t index) {
   if (index >= BUZZER_COUNT) {
     return;
@@ -76,6 +79,7 @@ void buzzer_stop_all(void) {
   }
 }
 
+// Toca em segundo plano (a interrupção faz o resto); frequência ou duração 0 = silêncio.
 void buzzer_start(uint8_t index, uint16_t frequency, uint16_t duration_ms) {
   if (index >= BUZZER_COUNT) {
     return;
@@ -105,6 +109,7 @@ void buzzer_start(uint8_t index, uint16_t frequency, uint16_t duration_ms) {
   }
 }
 
+// Milissegundos desde o arranque, contados pelo mesmo Timer2 (não usa o millis() do Arduino).
 uint32_t buzzer_millis(void) {
   uint32_t now;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
@@ -113,6 +118,7 @@ uint32_t buzzer_millis(void) {
   return now;
 }
 
+// Devolve 0 (silêncio) para a nota 0 ou fora da gama 60..95.
 uint16_t midi_note_frequency(uint8_t note) {
   if (note < MIDI_MIN_NOTE || note > MIDI_MAX_NOTE) {
     return 0;
@@ -120,6 +126,8 @@ uint16_t midi_note_frequency(uint8_t note) {
   return NOTE_FREQUENCIES[note - MIDI_MIN_NOTE];
 }
 
+// Corre a cada 20 us: atualiza o relógio e inverte o pino dos buzzers passivos
+// ao fim de meio período. Tem de ser curta para não atrasar o loop.
 ISR(TIMER2_COMPA_vect) {
   uint8_t i;
 
