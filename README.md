@@ -2,11 +2,11 @@
 
 Firmware em C para o ATmega328P do Arduino Uno (16 MHz), com três modos:
 reprodução de presets da EEPROM, reprodução de notas enviadas por UART e
-gravação de novos presets a partir de ficheiros MIDI. São armazenáveis três
-presets de até 120 eventos; os botões selecionam os presets 1 e 2. Os três
+gravação de novos presets a partir de ficheiros MIDI. São armazenáveis dois
+presets de até 120 eventos; os botões B1 e B2 selecionam os presets 1 e 2. Os três
 buzzers podem ser ativados em simultâneo; os canais 1 e 2 permitem selecionar
 a frequência, e o canal 3 tem tom fixo.
- 
+
 ## Índice
 
 - [Objetivo](#objetivo)
@@ -36,7 +36,7 @@ a reprodução em curso e descarta comandos ou tramas incompletos.
 | --- | --- |
 | 1 – Presets | B1 toca o preset 1 e B2 toca o preset 2, guardados na EEPROM. Os buzzers nos pinos 8 e 9 reproduzem as frequências dos eventos; o buzzer ativo no pino 10 produz o seu tom fixo. |
 | 2 – Live | O PC envia um ou mais comandos `B<buzzer>_<Hz>_<ms>` por UART. Cada comando toca no buzzer indicado sem guardar a nota; duração `0` pára esse buzzer. |
-| 3 – Gravação | O PC envia a trama binária gerada pelo conversor MIDI. A placa valida os eventos e o checksum e grava o slot 1, 2 ou 3 na EEPROM. |
+| 3 – Gravação | O PC envia a trama binária gerada pelo conversor MIDI. A placa valida os eventos e o checksum e grava o slot 1 ou 2 na EEPROM. |
 
 ## Hardware
 
@@ -121,15 +121,15 @@ Os campos são transmitidos por ordem, um byte de cada vez:
 | Campo | Tamanho | Descrição |
 | --- | --- | --- |
 | Cabeçalho | 1 byte | `0xAA` |
-| Slot | 1 byte | Música a substituir: `1`, `2` ou `3` |
+| Slot | 1 byte | Música a substituir: `1` ou `2` |
 | Comprimento | 2 bytes | Número de bytes dos eventos, big-endian: 3 a 360, múltiplo de 3 |
 | Eventos | 3 bytes cada | Buzzer/canal (1–3), nota MIDI (0 ou 60–95), duração em unidades de 10 ms (5–200) |
 | Checksum | 1 byte | XOR de todos os bytes anteriores |
 
 - Cada preset aceita de 1 a 120 eventos. A nota MIDI `0` é uma pausa no buzzer
   desse evento; as outras notas aceites são 60–95 (C4–B6).
-- A aplicação permite escolher os slots 1, 2 e 3. Os botões atuais selecionam
-  apenas os presets 1 e 2; não existe botão dedicado para reproduzir o preset 3.
+- A aplicação permite escolher os slots 1 e 2, que correspondem aos botões B1 e
+  B2 no modo 1.
 - A EEPROM só é atualizada depois de validar slot, comprimento, eventos e
   checksum. O slot fica inválido durante a escrita e só é marcado válido no
   fim.
@@ -151,16 +151,17 @@ Os campos são transmitidos por ordem, um byte de cada vez:
 ## Implementação
 
 - Firmware em C (`.c`): `main`, `buttons`, `buzzer`, `presets`,
-  `serial_modes` e `uart`. A inicialização e o ciclo principal implementam
-  `setup()` e `loop()` em C para o core Arduino.
+  `serial_modes` e `uart`. O programa começa em `main()` (inicialização e
+  ciclo infinito), sem o core Arduino.
 - `include/` – cabeçalhos com configuração e interfaces dos módulos.
 - GPIO, Timer2, UART e EEPROM são controlados diretamente pelos registos AVR
-  e pela avr-libc. A aplicação não usa as APIs C++ `Serial` ou `EEPROM`; o
-  framework Arduino fornece o arranque da placa.
+  e pela avr-libc. Não é usada nenhuma função da biblioteca Arduino
+  (`Serial`, `EEPROM`, `millis`, `digitalWrite`, etc.).
 - Timer2 usa CTC, prescaler 8 e comparação a cada 20 μs para atualizar os
   sinais dos três buzzers e fornecer a base de tempo do firmware.
 - `src/midi_para_trama.pyw` – conversor de ficheiros MIDI para a trama binária
-  recebida no modo 3.
+  recebida no modo 3. Tem 9600 baud fixos (igual ao firmware) e mostra a trama em
+  hexadecimal antes de a enviar.
 
 ## Fluxograma
 
@@ -191,7 +192,7 @@ flowchart TD
 
   M3 --> RECV[Receber trama MIDI por UART]
   RECV --> VALID{Trama válida?}
-  VALID -- Sim --> WRITE[Gravar numa das 3 posições da EEPROM]
+  VALID -- Sim --> WRITE[Gravar numa das 2 posições da EEPROM]
   VALID -- Não --> ERR_MIDI[Enviar erro]
   WRITE --> M3
   ERR_MIDI --> M3
@@ -199,9 +200,9 @@ flowchart TD
 
 ## Limites atuais
 
-- 3 músicas guardadas na EEPROM (presets 1, 2 e 3); cada slot ocupa 242 bytes:
+- 2 músicas guardadas na EEPROM (presets 1 e 2); cada slot ocupa 242 bytes:
   2 bytes de metadados e até 240 bytes de eventos compactados, totalizando
-  726 dos 1024 bytes disponíveis.
+  484 dos 1024 bytes disponíveis.
 - Máximo de 120 eventos por música. A trama UART transporta os eventos em
   3 bytes cada; o firmware compacta-os para 2 bytes por evento na EEPROM.
 - Gama de frequências live aceite: 100 Hz a 2400 Hz. Nos buzzers 1 e 2, o
@@ -216,7 +217,7 @@ flowchart TD
 - A frequência/timbre deve ser confirmada com os buzzers e os drivers finais;
   os canais 2 e 3 recebem ondas quadradas geradas por software numa interrupção
   de 20 μs.
-- A EEPROM do ATmega328P tem 1 KB; os três slots usam 726 bytes.
+- A EEPROM do ATmega328P tem 1 KB; os dois slots usam 484 bytes.
 - A EEPROM tem um número limitado de ciclos de escrita; evitar regravações
   desnecessárias.
 
@@ -233,8 +234,8 @@ flowchart TD
 
 ## Compilar e carregar
 
-Toolchain: PlatformIO, perfil Arduino Uno (`platformio.ini`), ATmega328P a
-16 MHz. Na raiz do projeto:
+Toolchain: PlatformIO com avr-gcc e sem framework Arduino (`platformio.ini`,
+placa Uno), ATmega328P a 16 MHz. Na raiz do projeto:
 
 ```powershell
 pio run -e uno
