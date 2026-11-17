@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [],
+      "stopAtEntry": false,
+      "externalConsole": true,
+      "cwd": "c:/Users/Luís/OneDrive - Instituto Politécnico do Cávado e do Ave/Ambiente de Trabalho/desnvolvimento de software/ldh-2026-g08/src",
+      "program": "c:/Users/Luís/OneDrive - Instituto Politécnico do Cávado e do Ave/Ambiente de Trabalho/desnvolvimento de software/ldh-2026-g08/src/build/Debug/outDebug",
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}

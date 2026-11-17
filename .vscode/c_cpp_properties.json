@@ -8,8 +8,8 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "C:/Users/Luís/Desktop/ldh-2026-g08/include",
-                "C:/Users/Luís/Desktop/ldh-2026-g08/src",
+                "C:/Users/Luís/OneDrive - Instituto Politécnico do Cávado e do Ave/Ambiente de Trabalho/desnvolvimento de software/ldh-2026-g08/include",
+                "C:/Users/Luís/OneDrive - Instituto Politécnico do Cávado e do Ave/Ambiente de Trabalho/desnvolvimento de software/ldh-2026-g08/src",
                 "C:/.platformio/packages/framework-arduino-avr/cores/arduino",
                 "C:/.platformio/packages/framework-arduino-avr/variants/standard",
                 "C:/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
@@ -22,8 +22,8 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "C:/Users/Luís/Desktop/ldh-2026-g08/include",
-                    "C:/Users/Luís/Desktop/ldh-2026-g08/src",
+                    "C:/Users/Luís/OneDrive - Instituto Politécnico do Cávado e do Ave/Ambiente de Trabalho/desnvolvimento de software/ldh-2026-g08/include",
+                    "C:/Users/Luís/OneDrive - Instituto Politécnico do Cávado e do Ave/Ambiente de Trabalho/desnvolvimento de software/ldh-2026-g08/src",
                     "C:/.platformio/packages/framework-arduino-avr/cores/arduino",
                     "C:/.platformio/packages/framework-arduino-avr/variants/standard",
                     "C:/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
