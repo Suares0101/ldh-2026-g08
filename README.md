@@ -167,35 +167,39 @@ Os campos são transmitidos por ordem, um byte de cada vez:
 
 ```mermaid
 flowchart TD
-  START([Reset]) --> INIT[Inicializar buzzers, botões, LEDs, UART e EEPROM]
-  INIT --> M1
+    A([Início]) --> B[Inicializar sistema]
+    B --> C[Configurar UART, EEPROM, botões, LEDs e buzzers]
+    C --> D[Selecionar modo 1]
+    D --> E[Executar ciclo principal]
 
-  M1[Modo 1 - Preset<br/>LED1 aceso]
-  M2[Modo 2 - Live<br/>LED2 aceso]
-  M3[Modo 3 - Gravação<br/>LED3 aceso]
+    E --> F{Botão B3 premido?}
+    F -- SIM --> G[Avançar para o modo seguinte]
+    G --> H[Atualizar LEDs indicadores]
+    H --> E
 
-  M1 -- B3 --> M2
-  M2 -- B3 --> M3
-  M3 -- B3 --> M1
+    F -- NÃO --> I{Qual o modo ativo?}
 
-  M1 -- B1 --> P1[Ler música 1 da EEPROM e tocar nos 3 buzzers]
-  M1 -- B2 --> P2[Ler música 2 da EEPROM e tocar nos 3 buzzers]
-  P1 --> M1
-  P2 --> M1
+    I -- Modo 1 --> J{Botão B1 ou B2 premido?}
+    J -- B1 --> K[Ler preset 1 da EEPROM]
+    J -- B2 --> L[Ler preset 2 da EEPROM]
+    J -- Nenhum --> E
+    K --> M[Reproduzir música nos 3 buzzers]
+    L --> M
+    M --> E
 
-  M2 --> CMD[Receber comando(s) UART]
-  CMD --> PARSE_LIVE{Comando válido?}
-  PARSE_LIVE -- Sim --> TONE[Tocar ou parar buzzer indicado]
-  PARSE_LIVE -- Não --> ERR_LIVE[Enviar erro]
-  TONE --> M2
-  ERR_LIVE --> M2
+    I -- Modo 2 --> N[Receber comando UART]
+    N --> O{Comando válido?}
+    O -- SIM --> P[Ativar ou parar buzzer indicado]
+    O -- NÃO --> Q[Enviar mensagem de erro]
+    P --> E
+    Q --> E
 
-  M3 --> RECV[Receber trama MIDI por UART]
-  RECV --> VALID{Trama válida?}
-  VALID -- Sim --> WRITE[Gravar numa das 2 posições da EEPROM]
-  VALID -- Não --> ERR_MIDI[Enviar erro]
-  WRITE --> M3
-  ERR_MIDI --> M3
+    I -- Modo 3 --> R[Receber trama MIDI por UART]
+    R --> S{Trama válida?}
+    S -- SIM --> T[Gravar preset na EEPROM]
+    S -- NÃO --> U[Enviar mensagem de erro]
+    T --> E
+    U --> E
 ```
 
 ## Limites atuais
