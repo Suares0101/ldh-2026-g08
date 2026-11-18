@@ -4,8 +4,7 @@ Firmware em C para o ATmega328P do Arduino Uno (16 MHz), com três modos:
 reprodução de presets da EEPROM, reprodução de notas enviadas por UART e
 gravação de novos presets a partir de ficheiros MIDI. São armazenáveis dois
 presets de até 120 eventos; os botões B1 e B2 selecionam os presets 1 e 2. Os três
-buzzers podem ser ativados em simultâneo; os canais 1 e 2 permitem selecionar
-a frequência, e o canal 3 tem tom fixo.
+buzzers podem ser ativados em simultâneo e reproduzem a frequência selecionada.
 
 ## Índice
 
@@ -34,7 +33,7 @@ a reprodução em curso e descarta comandos ou tramas incompletos.
 
 | Modo | Descrição |
 | --- | --- |
-| 1 – Presets | B1 toca o preset 1 e B2 toca o preset 2, guardados na EEPROM. Os buzzers nos pinos 8 e 9 reproduzem as frequências dos eventos; o buzzer ativo no pino 10 produz o seu tom fixo. |
+| 1 – Presets | B1 toca o preset 1 e B2 toca o preset 2, guardados na EEPROM. Os três buzzers reproduzem as frequências dos eventos. |
 | 2 – Live | O PC envia um ou mais comandos `B<buzzer>_<Hz>_<ms>` por UART. Cada comando toca no buzzer indicado sem guardar a nota; duração `0` pára esse buzzer. |
 | 3 – Gravação | O PC envia a trama binária gerada pelo conversor MIDI. A placa valida os eventos e o checksum e grava o slot 1 ou 2 na EEPROM. |
 
@@ -46,7 +45,7 @@ Pinos usados no teste atual (placa Arduino com a mesma ligação do Tinkercad):
 | --- | --- | --- |
 | Buzzer 1 — LOUDITY LD-BZEN-1201 | D8 | PB0 |
 | Buzzer 2 — LOUDITY LD-BZEN-1201 | D9 | PB1 |
-| Buzzer 3 — TMB12A05 | D10 | PB2 |
+| Buzzer 3 — transdutor passivo | D10 | PB2 |
 | Botão 1 (música 1 no modo preset) | D2 | PD2 |
 | Botão 2 (música 2 no modo preset) | D3 | PD3 |
 | Botão 3 (muda de modo) | D4 | PD4 |
@@ -59,17 +58,10 @@ Pinos usados no teste atual (placa Arduino com a mesma ligação do Tinkercad):
 - Alimentação: USB (5 V).
 - Botões ligados a GND quando premidos; as entradas usam resistências pull-up
   internas.
-- Buzzers 1 e 2: LOUDITY LD-BZEN-1201, transdutores eletromagnéticos sem
+- Buzzers 1, 2 e 3: LOUDITY LD-BZEN-1201, transdutores eletromagnéticos sem
   oscilador, com ressonância nominal de cerca de 2,4 kHz e tensão nominal de
   1,5 V, ligados aos pinos 8 e 9. O Timer2 gera a frequência pedida nestes
   canais.
-- Buzzer 3: TMB12A05 ativo, alimentado a 5 V, com oscilador interno, ligado ao
-  pino 10. É ligado apenas durante a duração pedida; a frequência é fixa e
-  não reproduz as alturas das notas.
-- Usar estágios de transístor/driver. O TMB12A05 pode consumir 30 mA, acima do
-  recomendado para uma saída GPIO, e os LD-BZEN-1201 não devem receber os 5 V
-  do pino diretamente: dimensionar o driver/alimentação para os valores dos
-  respetivos datasheets.
 - Os três LEDs indicam exclusivamente o modo ativo.
 - Placa final: PCB própria de 2 camadas, ≤ 80 × 60 mm, desenhada em Altium 365,
   com ponte USB-UART (por exemplo CH340) e conector ISP.
@@ -99,9 +91,7 @@ B1_2400_500 B2_2400_500
 
 - Buzzer: `1` a `3`; frequência aceite: 100 Hz a 2400 Hz; duração: 50 ms a
   2000 ms.
-- Nos buzzers 1 e 2, o firmware aplica a frequência indicada. No buzzer 3, a
-  frequência é ignorada: o TMB12A05 gera internamente o seu tom fixo; por
-  exemplo, `B3_0_500` liga-o durante 500 ms.
+- O firmware aplica a frequência indicada nos três buzzers passivos.
 - Frequências como 100 Hz ou 200 Hz estão muito abaixo da ressonância dos
   buzzers 1 e 2 e podem soar fracas ou ásperas; 2,4 kHz serve para verificar
   primeiro o timbre na frequência nominal.
@@ -152,7 +142,8 @@ Os campos são transmitidos por ordem, um byte de cada vez:
 
 - Firmware em C (`.c`): `main`, `buttons`, `buzzer`, `presets`,
   `serial_modes` e `uart`. O programa começa em `main()` (inicialização e
-  ciclo infinito), sem o core Arduino.
+  ciclo infinito). O PlatformIO está configurado com o framework Arduino,
+  mas o firmware não usa as APIs Arduino.
 - `include/` – cabeçalhos com configuração e interfaces dos módulos.
 - GPIO, Timer2, UART e EEPROM são controlados diretamente pelos registos AVR
   e pela avr-libc. Não é usada nenhuma função da biblioteca Arduino
@@ -212,14 +203,12 @@ flowchart TD
 - Gama de frequências live aceite: 100 Hz a 2400 Hz. Nos buzzers 1 e 2, o
   volume/resposta depende da frequência; a ressonância nominal é cerca de
   2,4 kHz, pelo que 100–200 Hz está muito abaixo do ponto de maior resposta.
-- O buzzer ativo do canal 3 só produz o seu tom fixo; nos presets, as notas
-  desse canal tornam-se sons de duração variável, não alturas variáveis. Para
-  melodias com três alturas variáveis, substituir o TMB12A05 por um transdutor
-  passivo compatível com o circuito.
+- Os três canais usam buzzers passivos e reproduzem a altura indicada pelas
+  notas dos presets.
 - Timer2 é usado pelo firmware para os três buzzers e deixa de estar disponível
   para outras funções que dependam desse temporizador.
 - A frequência/timbre deve ser confirmada com os buzzers e os drivers finais;
-  os canais 2 e 3 recebem ondas quadradas geradas por software numa interrupção
+  os três canais recebem ondas quadradas geradas por software numa interrupção
   de 20 μs.
 - A EEPROM do ATmega328P tem 1 KB; os dois slots usam 484 bytes.
 - A EEPROM tem um número limitado de ciclos de escrita; evitar regravações
@@ -238,8 +227,8 @@ flowchart TD
 
 ## Compilar e carregar
 
-Toolchain: PlatformIO com avr-gcc e sem framework Arduino (`platformio.ini`,
-placa Uno), ATmega328P a 16 MHz. Na raiz do projeto:
+Toolchain: PlatformIO com avr-gcc e framework Arduino selecionado no
+`platformio.ini` (placa Uno), ATmega328P a 16 MHz. Na raiz do projeto:
 
 ```powershell
 pio run -e uno

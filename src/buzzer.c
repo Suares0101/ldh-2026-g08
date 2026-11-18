@@ -94,17 +94,9 @@ void buzzer_start(uint8_t index, uint16_t frequency, uint16_t duration_ms) {
     buzzers[index].phase_us = 0;
     buzzers[index].remaining_ticks =
         (uint32_t)duration_ms * (1000U / TIMER_TICK_US);
-    if (index == ACTIVE_BUZZER_INDEX) {
-      // O TMB12A05 tem oscilador interno: alimenta-se com nível contínuo e
-      // a frequência recebida não deve ser aplicada como uma onda externa.
-      // O pino deve comandar um transístor, não alimentar o buzzer diretamente.
-      buzzers[index].output_high = 1;
-      PORTB |= BUZZER_BITS[index];
-    } else {
-      buzzers[index].output_high = 0;
-      buzzers[index].half_period_us = (uint16_t)(500000UL / frequency);
-      buzzer_pin_low(index);
-    }
+    buzzers[index].output_high = 0;
+    buzzers[index].half_period_us = (uint16_t)(500000UL / frequency);
+    buzzer_pin_low(index);
     buzzers[index].active = 1;
   }
 }
@@ -126,7 +118,7 @@ uint16_t midi_note_frequency(uint8_t note) {
   return NOTE_FREQUENCIES[note - MIDI_MIN_NOTE];
 }
 
-// Corre a cada 20 us: atualiza o relógio e inverte o pino dos buzzers passivos
+// Corre a cada 20 us: atualiza o relógio e inverte o pino dos buzzers
 // ao fim de meio período. Tem de ser curta para não atrasar o loop.
 ISR(TIMER2_COMPA_vect) {
   uint8_t i;
@@ -149,11 +141,6 @@ ISR(TIMER2_COMPA_vect) {
       continue;
     }
     --buzzers[i].remaining_ticks;
-
-    // O canal 3 é um buzzer ativo; só a sua duração é temporizada.
-    if (i == ACTIVE_BUZZER_INDEX) {
-      continue;
-    }
 
     buzzers[i].phase_us += TIMER_TICK_US;
     if (buzzers[i].phase_us >= buzzers[i].half_period_us) {

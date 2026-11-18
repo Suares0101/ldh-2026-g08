@@ -5,8 +5,6 @@
 #include <stdint.h>
 
 #define BUZZER_COUNT 3U
-#define ACTIVE_BUZZER_INDEX 2U          // buzzer 3 (índice 2) é ativo: só liga/desliga, não muda de nota
-#define BUZZER_RESONANT_FREQUENCY 2400U // frequência fixa do buzzer ativo
 #define MAX_SLOTS 2U                    // músicas guardadas na EEPROM (B1 e B2)
 #define MAX_EVENTS 120U                 // eventos por música
 #define EVENT_SIZE 3U                   // na trama: canal, nota, duração
@@ -22,7 +20,7 @@
 #define MIDI_MIN_DURATION 5U
 #define MIDI_MAX_DURATION 200U
 #define LIVE_MIN_FREQUENCY 100U
-#define LIVE_MAX_FREQUENCY BUZZER_RESONANT_FREQUENCY
+#define LIVE_MAX_FREQUENCY 2400U
 
 typedef enum {
   MODE_PRESETS = 1,
