@@ -9,7 +9,7 @@ sistema musical com 3 buzzers e envia-a pela porta série.
 Formato da trama (todos os valores em bytes):
     0xAA | SLOT | LEN_H | LEN_L | { CANAL NOTA DURACAO } x N | CHK
     SLOT     1..2     preset onde o Arduino guarda a música
-    LEN_H/L  3 x N    comprimento dos eventos, big-endian (máximo 360)
+    LEN_H/L  3 x N    comprimento dos eventos, big-endian (máximo 765)
     CANAL    1..3     buzzer que toca o evento
     NOTA     60..95   número de nota MIDI (0 = pausa)
     DURACAO  5..200   em unidades de 10 ms
@@ -26,7 +26,7 @@ Instalação:  pip install mido pyserial
 """
 import sys
 
-MAX_EV = 120         # eventos por preset (igual ao firmware)
+MAX_EV = 255         # eventos por preset (igual ao firmware)
 NOTA_MIN, NOTA_MAX = 60, 95
 DUR_MIN, DUR_MAX = 5, 200      # unidades de 10 ms
 HDR = 0xAA

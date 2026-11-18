@@ -3,7 +3,7 @@
 Firmware em C para o ATmega328P do Arduino Uno (16 MHz), com três modos:
 reprodução de presets da EEPROM, reprodução de notas enviadas por UART e
 gravação de novos presets a partir de ficheiros MIDI. São armazenáveis dois
-presets de até 120 eventos; os botões B1 e B2 selecionam os presets 1 e 2. Os três
+presets de até 255 eventos; os botões B1 e B2 selecionam os presets 1 e 2. Os três
 buzzers podem ser ativados em simultâneo e reproduzem a frequência selecionada.
 
 ## Índice
@@ -112,11 +112,11 @@ Os campos são transmitidos por ordem, um byte de cada vez:
 | --- | --- | --- |
 | Cabeçalho | 1 byte | `0xAA` |
 | Slot | 1 byte | Música a substituir: `1` ou `2` |
-| Comprimento | 2 bytes | Número de bytes dos eventos, big-endian: 3 a 360, múltiplo de 3 |
+| Comprimento | 2 bytes | Número de bytes dos eventos, big-endian: 3 a 765, múltiplo de 3 |
 | Eventos | 3 bytes cada | Buzzer/canal (1–3), nota MIDI (0 ou 60–95), duração em unidades de 10 ms (5–200) |
 | Checksum | 1 byte | XOR de todos os bytes anteriores |
 
-- Cada preset aceita de 1 a 120 eventos. A nota MIDI `0` é uma pausa no buzzer
+- Cada preset aceita de 1 a 255 eventos. A nota MIDI `0` é uma pausa no buzzer
   desse evento; as outras notas aceites são 60–95 (C4–B6).
 - A aplicação permite escolher os slots 1 e 2, que correspondem aos botões B1 e
   B2 no modo 1.
@@ -134,7 +134,7 @@ Os campos são transmitidos por ordem, um byte de cada vez:
   interpretador de consola.
 - Ao abrir a porta série, o Uno reinicia; carregar em B3 até selecionar o modo
   3 quando a aplicação pedir. Fechar o Monitor Série antes de enviar. Para
-  aceitar tramas de até 120 eventos, carregar no Uno o firmware atualizado
+  aceitar tramas de até 255 eventos, carregar no Uno o firmware atualizado
   (`pio run -e uno --target upload`); o conversor usa comprimento de dois bytes
   (`LEN_H`, `LEN_L`), incompatível com o firmware anterior.
 
@@ -195,10 +195,10 @@ flowchart TD
 
 ## Limites atuais
 
-- 2 músicas guardadas na EEPROM (presets 1 e 2); cada slot ocupa 242 bytes:
-  2 bytes de metadados e até 240 bytes de eventos compactados, totalizando
-  484 dos 1024 bytes disponíveis.
-- Máximo de 120 eventos por música. A trama UART transporta os eventos em
+- 2 músicas guardadas na EEPROM (presets 1 e 2); cada slot ocupa 512 bytes:
+  2 bytes de metadados e até 510 bytes de eventos compactados, totalizando
+  1024 dos 1024 bytes disponíveis.
+- Máximo de 255 eventos por música. A trama UART transporta os eventos em
   3 bytes cada; o firmware compacta-os para 2 bytes por evento na EEPROM.
 - Gama de frequências live aceite: 100 Hz a 2400 Hz. Nos buzzers 1 e 2, o
   volume/resposta depende da frequência; a ressonância nominal é cerca de
@@ -210,7 +210,7 @@ flowchart TD
 - A frequência/timbre deve ser confirmada com os buzzers e os drivers finais;
   os três canais recebem ondas quadradas geradas por software numa interrupção
   de 20 μs.
-- A EEPROM do ATmega328P tem 1 KB; os dois slots usam 484 bytes.
+- A EEPROM do ATmega328P tem 1 KB; os dois slots usam 1024 bytes.
 - A EEPROM tem um número limitado de ciclos de escrita; evitar regravações
   desnecessárias.
 

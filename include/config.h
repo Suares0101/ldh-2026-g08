@@ -6,7 +6,7 @@
 
 #define BUZZER_COUNT 3U
 #define MAX_SLOTS 2U                    // músicas guardadas na EEPROM (B1 e B2)
-#define MAX_EVENTS 120U                 // eventos por música
+#define MAX_EVENTS 255U                 // eventos por música
 #define EVENT_SIZE 3U                   // na trama: canal, nota, duração
 #define EEPROM_MAGIC 0xA6U              // marca um slot com gravação completa
 #define EEPROM_EVENT_SIZE 2U            // na EEPROM: canal+nota juntos, duração
